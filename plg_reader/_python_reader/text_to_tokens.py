@@ -13,7 +13,6 @@ class PyRead:
     """
     Простейший класс для паса питоновских файлов
     """
-    " " " " " "
 
     SEPARATORS = "()[]{},:.=+-*/%<>@\"'"
 
@@ -54,6 +53,7 @@ class PyRead:
                 if current:
                     tokens.append("".join(current))
                     current = []
+                tokens.append(ch)
 
             elif ch in cls.SEPARATORS:
                 if current:
@@ -79,20 +79,21 @@ class PyRead:
             tok = tokens[i]
             if tok in ('"', "'"):
                 j = i
+                count = 0
                 while j < n and tokens[j] == tok:
+                    count += 1
                     j += 1
 
-                count = j - i
-                if count >= 3:
+                while count >= 3:
                     compressed.append(tok * 3)
-                    for _ in range(count - 3):
-                        compressed.append(tok)
+                    count -= 3
 
-                else:
-                    for _ in range(count):
-                        compressed.append(tok)
-
+                for _ in range(count):
+                    compressed.append(tok)
                 i = j
+
+            elif tok.isspace():
+                i += 1
 
             else:
                 compressed.append(tok)
@@ -139,12 +140,6 @@ class PyRead:
                     while indent_stack and indent_stack[-1] > n_off:
                         indent_stack.pop()
                         current_level -= 1
-
-                    # По факту это гвард для неверных отступов. Но я не думаю что
-                    # compile() допустит этого, так что похуй
-                    # if not indent_stack or indent_stack[-1] != n_off:
-                    #    pass
-
                 tokens = line[1:]
 
             else:
