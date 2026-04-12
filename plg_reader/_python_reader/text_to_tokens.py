@@ -13,6 +13,7 @@ class PyRead:
     """
     Простейший класс для паса питоновских файлов
     """
+    " " " " " "
 
     SEPARATORS = "()[]{},:.=+-*/%<>@\"'"
 
@@ -77,25 +78,26 @@ class PyRead:
         while i < n:
             tok = tokens[i]
             if tok in ('"', "'"):
-                # считаем, сколько таких же подряд
                 j = i
                 while j < n and tokens[j] == tok:
                     j += 1
+
                 count = j - i
                 if count >= 3:
-                    # первые три склеиваем в один токен
                     compressed.append(tok * 3)
-                    # остальные (если больше трёх) докидываем по одному
                     for _ in range(count - 3):
                         compressed.append(tok)
+
                 else:
-                    # меньше трёх — оставляем как отдельные
                     for _ in range(count):
                         compressed.append(tok)
+
                 i = j
+
             else:
                 compressed.append(tok)
                 i += 1
+
         return compressed
 
     @classmethod
