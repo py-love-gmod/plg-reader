@@ -15,11 +15,12 @@ class PyRead:
     """
 
     SEPARATORS = "()[]{},:.=+-*/%<>@\"'"
+    MULTI_CHAR_OPS = {"->", "==", "!=", "<=", ">=", "//", "**"}
 
     @classmethod
     def read_file_to_tokens(cls, path: Path) -> list[RawLine]:
         text = path.read_text("utf-8-sig")  # fuckoff utf-8 bom
-        compile(text, path.name, "exec")  # simple saveguard
+        compile(text, path.name, "exec")  # simple safeguard
         raw = cls._to_raw_text(text)
         return cls._to_raw_lines(raw)
 
@@ -28,8 +29,12 @@ class PyRead:
         tokens = []
         current = []
         escape = False
+        i = 0
+        n = len(code)
 
-        for ch in code:
+        while i < n:
+            ch = code[i]
+
             if escape:
                 if current:
                     current.append(ch)
@@ -38,6 +43,7 @@ class PyRead:
                     current.append(ch)
 
                 escape = False
+                i += 1
                 continue
 
             if ch == "\\":
@@ -47,23 +53,40 @@ class PyRead:
 
                 escape = True
                 current.append(ch)
+                i += 1
                 continue
+
+            if i + 1 < n:
+                two_char = code[i : i + 2]
+                if two_char in cls.MULTI_CHAR_OPS:
+                    if current:
+                        tokens.append("".join(current))
+                        current = []
+
+                    tokens.append(two_char)
+                    i += 2
+                    continue
 
             if ch.isspace():
                 if current:
                     tokens.append("".join(current))
                     current = []
-                tokens.append(ch)
 
-            elif ch in cls.SEPARATORS:
+                tokens.append(ch)
+                i += 1
+                continue
+
+            if ch in cls.SEPARATORS:
                 if current:
                     tokens.append("".join(current))
                     current = []
 
                 tokens.append(ch)
+                i += 1
+                continue
 
-            else:
-                current.append(ch)
+            current.append(ch)
+            i += 1
 
         if current:
             tokens.append("".join(current))
@@ -90,6 +113,7 @@ class PyRead:
 
                 for _ in range(count):
                     compressed.append(tok)
+
                 i = j
 
             elif tok.isspace():
@@ -140,6 +164,7 @@ class PyRead:
                     while indent_stack and indent_stack[-1] > n_off:
                         indent_stack.pop()
                         current_level -= 1
+
                 tokens = line[1:]
 
             else:
