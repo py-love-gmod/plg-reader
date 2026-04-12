@@ -41,11 +41,11 @@ KWORD_SET = frozenset(
 
 KWORD_SET_BAN = frozenset(
     {
-        "async",  # forbitten
-        "global",  # forbitten
-        "lambda",  # forbitten
-        "nonlocal",  # forbitten
-        "yield",  # forbitten
+        "async",
+        "global",
+        "lambda",
+        "nonlocal",
+        "yield",
     }
 )
 
@@ -53,17 +53,18 @@ KWORD_SET_BAN = frozenset(
 class TokenType(IntEnum):
     NAME = auto()
     KWORD = auto()
+
     OP = auto()
+    DOT = auto()
+    ARROW = auto()
 
     NUMBER = auto()
 
     M_STRING = auto()
     STRING = auto()
 
-    NL = auto()
+    COMMENT = auto()
 
-    DOT = auto()
-    ARROW = auto()
     BRACKET_OPEN = auto()
     BRACKET_CLOSE = auto()
 
