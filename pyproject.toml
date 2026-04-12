@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plg-reader"
+version = "0.0.1a1"
+description = "Read and process Python subset"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.13"
+authors = [{ name = "Cain" }]
+
+[project.urls]
+homepage = "https://github.com/py-love-gmod/plg-reader"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"
