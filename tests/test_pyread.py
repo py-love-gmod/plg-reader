@@ -1,6 +1,6 @@
 import pytest
 
-from plg_reader._python_reader.text_to_tokens import PyRead
+from plg_reader._python_reader.text_to_raw_tokens import PyRead
 
 
 def write_temp_file(tmp_path, content):
