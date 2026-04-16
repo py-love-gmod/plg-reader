@@ -275,7 +275,6 @@ class TestRawLineBuilder:
         assert string_line.indent == 1
 
     # Тесты для strip_comments=True
-
     def test_strip_comments_removes_comment_tokens(self, tmp_path):
         code = "x = 1  # comment\n"
         file = write_temp_file(tmp_path, code)
