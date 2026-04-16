@@ -1,10 +1,6 @@
 from pathlib import Path
 
-from plg_reader._python_reader.text_to_raw_tokens import PyRead
+from plg_reader._python_reader.raw_line_builder import RawLineBuilder
 
-p = PyRead.read_file_to_tokens(
-    Path(r"F:\Desktop\plg\plg-reader\plg_reader\_python_reader\text_to_tokens.py")
-)
-
-for line in p:
+for line in RawLineBuilder.read_file_to_tokens(Path(__file__)):
     print(line.raw_strs)

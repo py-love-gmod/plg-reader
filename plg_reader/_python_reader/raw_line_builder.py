@@ -9,9 +9,10 @@ class RawLine:
     indent: int
     raw_strs: list[str]
     line_num: int
+    is_string_content: bool = False
 
 
-class PyRead:
+class RawLineBuilder:
     """
     Лексер Python-файлов с построчным представлением.
 
@@ -26,14 +27,48 @@ class PyRead:
     """
 
     SEPARATORS = frozenset("()[]{},:.=+-*/%<>@\"'#\\")
-    MULTI_CHAR_OPS = frozenset({"->", "==", "!=", "<=", ">=", "//", "**", "..."})
+    MULTI_CHAR_OPS = frozenset(
+        {
+            "->",
+            "==",
+            "!=",
+            "<=",
+            ">=",
+            "//",
+            "**",
+            "...",
+            "<<",
+            ">>",
+            ":=",
+            "+=",
+            "-=",
+            "*=",
+            "/=",
+            "%=",
+            "**=",
+            "//=",
+            "<<=",
+            ">>=",
+            "&=",
+            "|=",
+            "^=",
+            "@=",
+        }
+    )
+    STRING_PREFIXES = frozenset({"f", "r", "fr", "rf", "b", "u", "br", "rb"})
 
     @classmethod
-    def read_file_to_tokens(cls, path: Path) -> list[RawLine]:
+    def read_file_to_tokens(
+        cls,
+        path: Path,
+        strip_comments: bool = False,
+    ) -> list[RawLine]:
         text = path.read_text("utf-8-sig")  # fuckoff utf-8 bom
         compile(text, path.name, "exec")  # simple safeguard
         logical_lines = cls._join_continued_lines(text.splitlines())
-        raw_lines, _ = cls._process_lines_with_multiline_state(logical_lines)
+        raw_lines, _ = cls._process_lines_with_multiline_state(
+            logical_lines, strip_comments
+        )
         return cls._assign_indent_levels(raw_lines)
 
     @staticmethod
@@ -56,7 +91,9 @@ class PyRead:
 
     @classmethod
     def _process_lines_with_multiline_state(
-        cls, logical_lines: list[str]
+        cls,
+        logical_lines: list[str],
+        strip_comments: bool,
     ) -> tuple[list[RawLine], tuple[str, int] | None]:
         """
         Возвращает список RawLine и состояние незакрытой многострочной строки.
@@ -70,38 +107,52 @@ class PyRead:
             indent_len = len(line) - len(stripped)
 
             if in_multiline is not None:
-                quote_type, base_indent = in_multiline
-                end_idx = stripped.find(quote_type)
+                quote_type, _ = in_multiline
+                end_idx = line.find(quote_type)
                 if end_idx != -1:
-                    content = stripped[:end_idx]
+                    content = line[:end_idx]
                     tokens = []
-                    if content:
+                    if content and not content.isspace():
                         tokens.append(content)
 
                     tokens.append(quote_type)
-                    rest = stripped[end_idx + len(quote_type) :]
-                    if rest:
-                        tokens.extend(cls._tokenize_line(rest, line_num)) # WTF?
-
-                    raw_lines.append(
-                        RawLine(indent=indent_len, raw_strs=tokens, line_num=line_num)
+                    rest = line[end_idx + len(quote_type) :]
+                    rest_tokens, new_multiline = (
+                        cls._tokenize_line_with_multiline_start(rest, strip_comments)
                     )
-                    in_multiline = None
+                    tokens.extend(rest_tokens)
+                    raw_lines.append(
+                        RawLine(
+                            indent=indent_len,
+                            raw_strs=tokens,
+                            line_num=line_num,
+                            is_string_content=False,
+                        )
+                    )
+                    in_multiline = new_multiline
 
                 else:
                     raw_lines.append(
                         RawLine(
-                            indent=indent_len, raw_strs=[stripped], line_num=line_num
+                            indent=indent_len,
+                            raw_strs=[line],
+                            line_num=line_num,
+                            is_string_content=True,
                         )
                     )
 
                 continue
 
             tokens, new_multiline = cls._tokenize_line_with_multiline_start(
-                stripped, line_num
+                stripped, strip_comments
             )
             raw_lines.append(
-                RawLine(indent=indent_len, raw_strs=tokens, line_num=line_num)
+                RawLine(
+                    indent=indent_len,
+                    raw_strs=tokens,
+                    line_num=line_num,
+                    is_string_content=False,
+                )
             )
             if new_multiline is not None:
                 quote_type, _ = new_multiline
@@ -111,15 +162,16 @@ class PyRead:
 
     @classmethod
     def _tokenize_line_with_multiline_start(
-        cls, line: str, line_num: int
+        cls, line: str, strip_comments: bool
     ) -> tuple[list[str], tuple[str, int] | None]:
         """
         Токенизирует строку, не находящуюся внутри многострочной строки.
-        Возвращает список токенов и информацию о начале многострочной строки, если она открыта и не закрыта.
+        Возвращает (токены, состояние_незакрытой_тройной_строки или None).
         """
         tokens = []
         i = 0
         n = len(line)
+
         while i < n:
             ch = line[i]
 
@@ -128,30 +180,37 @@ class PyRead:
                 continue
 
             if ch == "#":
-                tokens.append(line[i:])
+                if not strip_comments:
+                    tokens.append(line[i:])
+
                 break
 
             prefix = ""
-            if ch in "frFR" and i + 1 < n and line[i + 1] in "\"'":
-                prefix = ch
-                i += 1
+            j = i
+            while j < n and line[j].lower() in "furb":
+                j += 1
+
+            if j > i and j < n and line[j] in "\"'":
+                prefix = line[i:j]
+                i = j
                 ch = line[i]
 
             if ch in "\"'":
                 is_triple = i + 2 < n and line[i : i + 3] == ch * 3
                 quote_token = ch * 3 if is_triple else ch
+
                 if prefix:
                     tokens.append(prefix)
 
                 tokens.append(quote_token)
+
                 if is_triple:
                     i += 3
                     remaining = line[i:]
                     end_idx = remaining.find(quote_token)
                     if end_idx == -1:
-                        content = remaining
-                        if content:
-                            tokens.append(content)
+                        if remaining:
+                            tokens.append(remaining)
 
                         return tokens, (quote_token, 0)
 
@@ -159,11 +218,9 @@ class PyRead:
                         content = remaining[:end_idx]
                         if content:
                             tokens.append(content)
-
                         tokens.append(quote_token)
-                        i = i + end_idx + 3
+                        i += end_idx + 3
                         continue
-
                 else:
                     i += 1
                     start = i
@@ -201,6 +258,7 @@ class PyRead:
                     tokens.append(two)
                     i += 2
                     continue
+
                 if i + 2 < n and line[i : i + 3] == "...":
                     tokens.append("...")
                     i += 3
@@ -224,10 +282,21 @@ class PyRead:
 
     @staticmethod
     def _assign_indent_levels(raw_lines: list[RawLine]) -> list[RawLine]:
+        """
+        Преобразует абсолютные отступы (количество пробелов/табов) в уровни вложенности.
+        Строки, помеченные is_string_content=True, не влияют на стек отступов.
+        """
         output = []
         indent_stack = [0]
         current_level = 0
+
         for line in raw_lines:
+            if line.is_string_content:
+                output.append(
+                    RawLine(current_level, line.raw_strs, line.line_num, True)
+                )
+                continue
+
             indent = line.indent
             if indent > indent_stack[-1]:
                 indent_stack.append(indent)
@@ -238,6 +307,6 @@ class PyRead:
                     indent_stack.pop()
                     current_level -= 1
 
-            output.append(RawLine(current_level, line.raw_strs, line.line_num))
+            output.append(RawLine(current_level, line.raw_strs, line.line_num, False))
 
         return output
