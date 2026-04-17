@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
-
-@dataclass
-class RawLine:
-    indent: int
-    raw_strs: list[str]
-    line_num: int
-    is_string_content: bool = False
+from .dat_cl import MULTI_CHAR_OPS, SEPARATORS, RawLine
 
 
 class RawLineBuilder:
@@ -26,39 +19,8 @@ class RawLineBuilder:
       - отступы вычисляются как количество начальных пробелов/табуляций (таб = 1)
     """
 
-    SEPARATORS = frozenset("()[]{},:.=+-*/%<>@\"'#\\")
-    MULTI_CHAR_OPS = frozenset(
-        {
-            "->",
-            "==",
-            "!=",
-            "<=",
-            ">=",
-            "//",
-            "**",
-            "...",
-            "<<",
-            ">>",
-            ":=",
-            "+=",
-            "-=",
-            "*=",
-            "/=",
-            "%=",
-            "**=",
-            "//=",
-            "<<=",
-            ">>=",
-            "&=",
-            "|=",
-            "^=",
-            "@=",
-        }
-    )
-    STRING_PREFIXES = frozenset({"f", "r", "fr", "rf", "b", "u", "br", "rb"})
-
     @classmethod
-    def read_file_to_tokens(
+    def read_file_to_raw_lines(
         cls,
         path: Path,
         strip_comments: bool = False,
@@ -124,6 +86,7 @@ class RawLineBuilder:
                     raw_lines.append(
                         RawLine(
                             indent=indent_len,
+                            abs_indent=indent_len,
                             raw_strs=tokens,
                             line_num=line_num,
                             is_string_content=False,
@@ -135,12 +98,12 @@ class RawLineBuilder:
                     raw_lines.append(
                         RawLine(
                             indent=indent_len,
+                            abs_indent=indent_len,
                             raw_strs=[line],
                             line_num=line_num,
                             is_string_content=True,
                         )
                     )
-
                 continue
 
             tokens, new_multiline = cls._tokenize_line_with_multiline_start(
@@ -149,6 +112,7 @@ class RawLineBuilder:
             raw_lines.append(
                 RawLine(
                     indent=indent_len,
+                    abs_indent=indent_len,
                     raw_strs=tokens,
                     line_num=line_num,
                     is_string_content=False,
@@ -218,9 +182,11 @@ class RawLineBuilder:
                         content = remaining[:end_idx]
                         if content:
                             tokens.append(content)
+
                         tokens.append(quote_token)
                         i += end_idx + 3
                         continue
+
                 else:
                     i += 1
                     start = i
@@ -254,26 +220,24 @@ class RawLineBuilder:
 
             if i + 1 < n:
                 two = line[i : i + 2]
-                if two in cls.MULTI_CHAR_OPS:
+                if two in MULTI_CHAR_OPS:
                     tokens.append(two)
                     i += 2
                     continue
-
                 if i + 2 < n and line[i : i + 3] == "...":
                     tokens.append("...")
                     i += 3
                     continue
 
-            if ch in cls.SEPARATORS:
+            if ch in SEPARATORS:
                 tokens.append(ch)
                 i += 1
                 continue
 
             start = i
-            while i < n and not line[i].isspace() and line[i] not in cls.SEPARATORS:
-                if i + 1 < n and line[i : i + 2] in cls.MULTI_CHAR_OPS:
+            while i < n and not line[i].isspace() and line[i] not in SEPARATORS:
+                if i + 1 < n and line[i : i + 2] in MULTI_CHAR_OPS:
                     break
-
                 i += 1
 
             tokens.append(line[start:i])
@@ -285,6 +249,9 @@ class RawLineBuilder:
         """
         Преобразует абсолютные отступы (количество пробелов/табов) в уровни вложенности.
         Строки, помеченные is_string_content=True, не влияют на стек отступов.
+        После обработки:
+          - `indent` - логический уровень вложенности (0, 1, 2, ...)
+          - `abs_indent` - исходное количество символов отступа в строке
         """
         output = []
         indent_stack = [0]
@@ -293,11 +260,17 @@ class RawLineBuilder:
         for line in raw_lines:
             if line.is_string_content:
                 output.append(
-                    RawLine(current_level, line.raw_strs, line.line_num, True)
+                    RawLine(
+                        indent=current_level,
+                        abs_indent=line.abs_indent,
+                        raw_strs=line.raw_strs,
+                        line_num=line.line_num,
+                        is_string_content=True,
+                    )
                 )
                 continue
 
-            indent = line.indent
+            indent = line.abs_indent
             if indent > indent_stack[-1]:
                 indent_stack.append(indent)
                 current_level += 1
@@ -307,6 +280,14 @@ class RawLineBuilder:
                     indent_stack.pop()
                     current_level -= 1
 
-            output.append(RawLine(current_level, line.raw_strs, line.line_num, False))
+            output.append(
+                RawLine(
+                    indent=current_level,
+                    abs_indent=line.abs_indent,
+                    raw_strs=line.raw_strs,
+                    line_num=line.line_num,
+                    is_string_content=False,
+                )
+            )
 
         return output
