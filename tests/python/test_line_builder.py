@@ -221,10 +221,11 @@ class TestLineBuilder:
         assert token.type == TokenType.NUMBER
         assert token.data == num
 
-    def test_complex_number(self):  # TODO
+    @pytest.mark.xfail(reason="Комплексные числа пока не реализованы")
+    def test_complex_number(self):
         raw = self._make_raw_line(["2+3j"])
         LineBuilder.raw_lines_to_lines([raw])
-        pass
+        assert False
 
     # Позиции токенов (start)
     def test_token_positions_with_indent(self):
