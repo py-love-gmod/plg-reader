@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
@@ -33,7 +31,6 @@ MULTI_CHAR_OPS = frozenset(
         "@=",
     }
 )
-STRING_PREFIXES = frozenset({"f", "r", "fr", "rf", "b", "u", "br", "rb"})
 KWORD = frozenset(
     {
         "and",
@@ -73,29 +70,15 @@ KWORD = frozenset(
 KWORD_BAN = frozenset({"async", "global", "lambda", "nonlocal", "yield"})
 
 
-@dataclass
-class RawLine:
-    indent: int
-    abs_indent: int
-    raw_strs: list[str]
-    line_num: int
-    is_string_content: bool = False
-
-
 class TokenType(Enum):
     NAME = auto()
     KWORD = auto()
-
     OP = auto()
-
     NUMBER = auto()
-
     PARENTHESE_OPEN = auto()
     PARENTHESE_CLOSE = auto()
-
     COMMA = auto()
     DOT = auto()
-
     MULT_STRING = auto()
     STRING = auto()
     COMMENT = auto()
@@ -106,7 +89,7 @@ class Token:
     start: int
     data: Any
     type: TokenType
-    subtype: str | None
+    subtype: str | None = None
 
 
 @dataclass
@@ -114,3 +97,13 @@ class Line:
     indent: int
     line_num: int
     tokens: list[Token]
+
+
+@dataclass
+class MultilineState:
+    prefix: str
+    quote: str
+    parts: list[str]
+    start_col: int
+    start_line: int
+    tokens_before: list[Token] = field(default_factory=list)

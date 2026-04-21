@@ -1,11 +1,15 @@
 from pathlib import Path
 
-from plg_reader._python.logic_builder import LineBuilder
-from plg_reader._python.raw_line_builder import RawLineBuilder
+from plg_reader._python.parse_file import FileParser
 
-raw_line = RawLineBuilder.read_file_to_raw_lines(Path(__file__))
-lines = LineBuilder.raw_lines_to_lines(raw_line)
+text = FileParser.parse(Path(__file__), False)
 
+"""
+t
+e
+s
+t
+"""
 
-for line in lines:
-    print(line.tokens)
+for t in text:
+    print(t.tokens)
