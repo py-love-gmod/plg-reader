@@ -11,5 +11,6 @@ s
 t
 """
 
-for t in text:
-    print(t.tokens)
+# Комментарий
+for t in text:  # Комментарий
+    print(t)

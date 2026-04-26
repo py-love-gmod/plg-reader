@@ -114,7 +114,9 @@ class FileParser:
 
             if ch == "#":
                 if not strip_comments:
-                    tokens.append(Token(start_col, text[i:], TokenType.COMMENT))
+                    tokens.append(
+                        Token(start_col, text[i:], TokenType.COMMENT, line_num=line_num)
+                    )
 
                 break
 
@@ -155,6 +157,7 @@ class FileParser:
                         text[i : i + 2],
                         TokenType.OP,
                         subtype=text[i : i + 2],
+                        line_num=line_num,
                     )
                 )
                 i += 2
@@ -162,14 +165,22 @@ class FileParser:
                 continue
 
             if i + 2 < n and text[i : i + 3] == "...":
-                tokens.append(Token(start_col, "...", TokenType.OP, subtype="..."))
+                tokens.append(
+                    Token(
+                        start_col,
+                        "...",
+                        TokenType.OP,
+                        subtype="...",
+                        line_num=line_num,
+                    )
+                )
                 i += 3
                 pos += 3
                 continue
 
             if ch in SEPARATORS:
                 ttype, subtype = cls._classify_separator(ch)
-                tokens.append(Token(start_col, ch, ttype, subtype))
+                tokens.append(Token(start_col, ch, ttype, subtype, line_num=line_num))
                 i += 1
                 pos += 1
                 continue
@@ -200,13 +211,7 @@ class FileParser:
 
                 else:
                     token_text = text[i:j]
-                    if cls._is_number(token_text):
-                        token = Token(start_col, token_text, TokenType.NUMBER)
-
-                    else:
-                        token = cls._create_name_or_number_token(
-                            token_text, start_col, line_num
-                        )
+                    token = cls._create_number_token(token_text, start_col, line_num)
 
                 tokens.append(token)
                 i = j
@@ -250,6 +255,7 @@ class FileParser:
             start=state.start_col,
             data=full_data,
             type=TokenType.MULT_STRING,
+            line_num=state.start_line,
         )
 
         remaining_text = text[end_idx + len(quote) :]
@@ -303,6 +309,7 @@ class FileParser:
                     start=start_col,
                     data=full_str,
                     type=TokenType.MULT_STRING,
+                    line_num=line_num,
                 )
                 return token, j + 3, None
 
@@ -314,7 +321,7 @@ class FileParser:
                     parts=[content + "\n"],
                     start_col=start_col,
                     start_line=line_num,
-                    tokens_before=[],  # будет перезаписано в _scan_line
+                    tokens_before=[],
                 )
                 return None, i, state
 
@@ -343,6 +350,7 @@ class FileParser:
                 start=start_col,
                 data=full_str,
                 type=TokenType.STRING,
+                line_num=line_num,
             )
             return token, j + 1, None
 
@@ -364,26 +372,27 @@ class FileParser:
             return TokenType.OP, ch
 
     @staticmethod
-    def _create_name_or_number_token(text: str, start_col: int, line_num: int) -> Token:
-        if text in KWORD:
-            return Token(start_col, text, TokenType.KWORD)
+    def _create_number_token(text: str, start_col: int, line_num: int) -> Token:
+        s_clean = text.replace("_", "")
 
-        if text in KWORD_BAN:
+        if s_clean.endswith(("j", "J")):
             raise RuntimeError(
-                f"Запрещённое ключевое слово '{text}' на строке {line_num}, позиция {start_col}"
+                f"Комплексные числа не разрешены: '{text}' на строке {line_num}, позиция {start_col}"
             )
 
-        if FileParser._is_number(text):
-            return Token(start_col, text, TokenType.NUMBER)
+        try:
+            value = int(s_clean, 0)
 
-        return Token(start_col, text, TokenType.NAME)
+        except ValueError:
+            value = float(s_clean)
+
+        return Token(start_col, value, TokenType.NUMBER, line_num=line_num)
 
     @staticmethod
     def _is_number(s: str) -> bool:
         s_clean = s.replace("_", "")
         if s_clean.endswith(("j", "J")):
-            s_clean = s_clean[:-1]
-
+            return False
         if re.match(r"^0[xX][0-9a-fA-F]+$", s_clean):
             return True
 
@@ -399,6 +408,28 @@ class FileParser:
 
         except ValueError:
             return False
+
+    @staticmethod
+    def _create_name_or_number_token(text: str, start_col: int, line_num: int) -> Token:
+        if text in KWORD:
+            return Token(start_col, text, TokenType.KWORD, line_num=line_num)
+
+        if text in KWORD_BAN:
+            raise RuntimeError(
+                f"Запрещённое ключевое слово '{text}' на строке {line_num}, позиция {start_col}"
+            )
+
+        if FileParser._is_number(text):
+            s_clean = text.replace("_", "")
+            try:
+                value = int(s_clean, 0)
+
+            except ValueError:
+                value = float(s_clean)
+
+            return Token(start_col, value, TokenType.NUMBER, line_num=line_num)
+
+        return Token(start_col, text, TokenType.NAME, line_num=line_num)
 
     @classmethod
     def _assign_indents(

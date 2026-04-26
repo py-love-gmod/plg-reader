@@ -90,6 +90,7 @@ class Token:
     data: Any
     type: TokenType
     subtype: str | None = None
+    line_num: int = 0
 
 
 @dataclass
