@@ -13,4 +13,4 @@ t
 
 # Комментарий
 for t in text:  # Комментарий
-    print(t)
+    print(t.tokens)

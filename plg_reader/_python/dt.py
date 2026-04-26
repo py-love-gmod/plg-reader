@@ -86,11 +86,10 @@ class TokenType(Enum):
 
 @dataclass
 class Token:
-    start: int
+    pos: tuple[int, int]
     data: Any
     type: TokenType
     subtype: str | None = None
-    line_num: int = 0
 
 
 @dataclass
@@ -105,6 +104,5 @@ class MultilineState:
     prefix: str
     quote: str
     parts: list[str]
-    start_col: int
-    start_line: int
+    start_pos: tuple[int, int]
     tokens_before: list[Token] = field(default_factory=list)
