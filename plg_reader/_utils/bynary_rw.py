@@ -1,9 +1,11 @@
 import struct
+from typing import Any, BinaryIO
 
 
 class BinaryRW:
+    # Varint
     @staticmethod
-    def _write_varint(f, value):
+    def _write_varint(f: BinaryIO, value: int) -> None:
         while value >= 0x80:
             f.write(struct.pack("<B", (value & 0x7F) | 0x80))
             value >>= 7
@@ -11,7 +13,7 @@ class BinaryRW:
         f.write(struct.pack("<B", value))
 
     @staticmethod
-    def _read_varint(f):
+    def _read_varint(f: BinaryIO) -> int:
         value = 0
         shift = 0
         while True:
@@ -23,16 +25,35 @@ class BinaryRW:
 
         return value
 
+    # Публичный API
     @staticmethod
-    def dump(obj, file):
+    def dump(file: BinaryIO, header: str, obj: Any) -> None:
+        """
+        Сериализовать объект и записать в файл.
+        """
+        file.write(b"PLGB")
+        header_bytes = header.encode("utf-8")
+        BinaryRW._write_varint(file, len(header_bytes))
+        file.write(header_bytes)
         BinaryRW._write_obj(file, obj)
 
     @staticmethod
-    def load(file):
-        return BinaryRW._read_obj(file)
+    def load(file: BinaryIO) -> tuple[str, Any]:
+        """
+        Возвращает кортеж (header, payload)
+        """
+        magic = file.read(4)
+        if magic != b"PLGB":
+            raise ValueError("Invalid magic signature: expected b'PLGB'")
 
+        header_len = BinaryRW._read_varint(file)
+        header = file.read(header_len).decode("utf-8")
+        payload = BinaryRW._read_obj(file)
+        return header, payload
+
+    # Запись произвольного объекта
     @staticmethod
-    def _write_obj(f, obj):
+    def _write_obj(f: BinaryIO, obj: Any) -> None:
         match obj:
             case None:
                 f.write(b"\x00")
@@ -55,10 +76,10 @@ class BinaryRW:
                 f.write(struct.pack("<d", obj))
 
             case str():
-                b = obj.encode("utf-8")
+                data = obj.encode("utf-8")
                 f.write(b"\x04")
-                BinaryRW._write_varint(f, len(b))
-                f.write(b)
+                BinaryRW._write_varint(f, len(data))
+                f.write(data)
 
             case bytes():
                 f.write(b"\x05")
@@ -93,8 +114,9 @@ class BinaryRW:
             case _:
                 raise TypeError(f"Unsupported type: {type(obj)}")
 
+    # Чтение произвольного объекта
     @staticmethod
-    def _read_obj(f):
+    def _read_obj(f: BinaryIO) -> Any:
         tag = f.read(1)[0]
         match tag:
             case 0x00:
@@ -139,11 +161,7 @@ class BinaryRW:
 
             case 0x09:
                 size = BinaryRW._read_varint(f)
-                s = set()
-                for _ in range(size):
-                    s.add(BinaryRW._read_obj(f))
-
-                return s
+                return {BinaryRW._read_obj(f) for _ in range(size)}
 
             case _:
                 raise ValueError(f"Unknown tag: {tag}")
