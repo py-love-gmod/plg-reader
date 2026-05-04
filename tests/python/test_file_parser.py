@@ -110,11 +110,9 @@ class TestNumbers:
         assert [t.type for t in tokens] == [
             TokenType.NAME,
             TokenType.OP,
-            TokenType.OP,
             TokenType.NUMBER,
         ]
-        assert tokens[2].data == "-"
-        assert tokens[3].data == 5
+        assert tokens[2].data == -5
 
     def test_number_with_underscores(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, "x = 0b1_0\n"))
@@ -344,5 +342,35 @@ def multiply(x, y):
         assert lines[5].tokens[0].data == "else"
         assert lines[6].tokens[0].data == "return"
         assert lines[3].tokens[3].data == 100
-        minus = lines[6].tokens[1]
-        assert minus.type == TokenType.OP and minus.data == "-"
+        assert lines[6].tokens[1].data == -1
+
+
+class TestEdgeCases:
+    def test_unary_vs_binary_minus(self, tmp_path):
+        code = "x = -5 + -3.14 - 2\n"
+        lines = FileParser.parse(write_temp_file(tmp_path, code))
+        tokens = lines[0].tokens
+        assert [t.type for t in tokens] == [
+            TokenType.NAME,
+            TokenType.OP,
+            TokenType.NUMBER,
+            TokenType.OP,
+            TokenType.NUMBER,
+            TokenType.OP,
+            TokenType.NUMBER,
+        ]
+        assert [t.data for t in tokens] == ["x", "=", -5, "+", -3.14, "-", 2]
+        assert tokens[5].type == TokenType.OP and tokens[5].data == "-"
+
+    def test_comment_disables_continuation(self, tmp_path):
+        code = "x = 1 # comment \\\ny = 2\n"
+        lines = FileParser.parse(write_temp_file(tmp_path, code))
+        assert len(lines) == 2
+        assert lines[0].tokens[-1].type == TokenType.COMMENT
+        assert lines[1].tokens[0].data == "y"
+
+    def test_semicolon_no_empty_group(self, tmp_path):
+        code = "x = 1  ;\n"
+        lines = FileParser.parse(write_temp_file(tmp_path, code))
+        assert len(lines) == 1
+        assert [t.data for t in lines[0].tokens] == ["x", "=", 1]

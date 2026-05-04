@@ -16,7 +16,6 @@ from .dt import (
 )
 
 
-# маппинг логической колонки -> физическая позиция
 class LineSegment:
     __slots__ = ("offset", "phys_line", "phys_col_start", "length")
 
@@ -48,6 +47,10 @@ def build_physical_mapper(
 
 
 class FileParser:
+    _RE_HEX = re.compile(r"^0[xX][0-9a-fA-F]+$")
+    _RE_BIN = re.compile(r"^0[bB][01]+$")
+    _RE_OCT = re.compile(r"^0[oO][0-7]+$")
+
     @classmethod
     def parse(cls, file_path: Path, strip_comments: bool = False) -> list[Line]:
         text = file_path.read_text("utf-8-sig")
@@ -56,17 +59,81 @@ class FileParser:
         lines_with_tokens = cls._scan_logical_lines(logical_lines, strip_comments)
         return cls._assign_indents(lines_with_tokens)
 
-    # Склеивание строк с \
+    @staticmethod
+    def _find_continuation_boundary(line: str) -> tuple[int, bool]:
+        n = len(line)
+        in_string = False
+        string_char = ""
+        triple = False
+        escape = False
+        comment_start = n
+
+        i = 0
+        while i < n:
+            ch = line[i]
+            if not in_string:
+                if ch == "#":
+                    comment_start = i
+                    break
+
+                elif ch in "\"'":
+                    in_string = True
+                    string_char = ch
+                    triple = i + 2 < n and line[i : i + 3] == ch * 3
+                    if triple:
+                        i += 3
+                        continue
+
+            else:
+                if escape:
+                    escape = False
+                    i += 1
+                    continue
+
+                if triple:
+                    if line[i : i + 3] == string_char * 3:
+                        in_string = False
+                        triple = False
+                        i += 3
+                        continue
+
+                else:
+                    if ch == "\\":
+                        escape = True
+                        i += 1
+                        continue
+
+                    if ch == string_char:
+                        in_string = False
+
+            i += 1
+
+        code_part = line[:comment_start].rstrip(" \t")
+        if not code_part:
+            return 0, False
+
+        if code_part[-1] == "\\":
+            last_slash = line.rfind("\\", 0, comment_start)
+            after_slash = line[last_slash + 1 : comment_start]
+            if not after_slash or after_slash.isspace():
+                return last_slash, True
+
+        return 0, False
+
     @staticmethod
     def _join_continued_lines(text: str) -> list[tuple[str, list[LineSegment]]]:
         physical = text.splitlines(keepends=False)
-        logical = []
-        current_parts = []
+        logical: list[tuple[str, list[LineSegment]]] = []
+        current_parts: list[tuple[str, int, int, int]] = []
         line_num = 1
 
         for raw_line in physical:
-            if raw_line.endswith("\\"):
-                part = raw_line[:-1]
+            end_code_idx, is_continuation = FileParser._find_continuation_boundary(
+                raw_line
+            )
+
+            if is_continuation:
+                part = raw_line[:end_code_idx]
                 if current_parts:
                     stripped = part.lstrip(" \t")
                     removed = len(part) - len(stripped)
@@ -85,7 +152,7 @@ class FileParser:
                     current_parts.append((raw_line, line_num, 0, len(raw_line)))
 
                 full_text = ""
-                segments = []
+                segments: list[LineSegment] = []
                 for pt, ln, col_start, length in current_parts:
                     offset = len(full_text)
                     full_text += pt
@@ -108,14 +175,13 @@ class FileParser:
 
         return logical
 
-    # Разбор логических строк, учёт multiline-состояний
     @classmethod
     def _scan_logical_lines(
         cls,
         logical: list[tuple[str, list[LineSegment]]],
         strip_comments: bool,
     ) -> list[tuple[list[Token], int, int]]:
-        result = []
+        result: list[tuple[list[Token], int, int]] = []
         state: MultilineState | None = None
 
         for text, segments in logical:
@@ -160,7 +226,7 @@ class FileParser:
         strip_comments: bool,
     ) -> tuple[list[list[Token]], MultilineState | None]:
         to_phys = build_physical_mapper(segments)
-        tokens = []
+        tokens: list[Token] = []
         pos = indent_spaces
         i = indent_spaces
         n = len(text)
@@ -182,7 +248,6 @@ class FileParser:
 
                 break
 
-            # строки
             if ch in "\"'":
                 token, new_i, new_state = cls._read_string(text, i, start_col, to_phys)
                 if new_state is not None:
@@ -196,7 +261,6 @@ class FileParser:
                 pos = start_col + (new_i - i)
                 continue
 
-            # строки с префиксами
             j = i
             while j < n and text[j].lower() in "furb":
                 j += 1
@@ -214,7 +278,31 @@ class FileParser:
                 pos = start_col + (new_i - i)
                 continue
 
-            # многосимвольные операторы
+            if (
+                ch in "+-"
+                and i + 1 < n
+                and (text[i + 1].isdigit() or text[i + 1] == ".")
+            ):
+                prev = tokens[-1] if tokens else None
+                unary_ok = prev is None or prev.type in (
+                    TokenType.OP,
+                    TokenType.PARENTHESE_OPEN,
+                    TokenType.COMMA,
+                    TokenType.KWORD,
+                    TokenType.PARENTHESE_CLOSE,
+                    TokenType.DOT,
+                )
+                if unary_ok:
+                    i += 1
+                    pos += 1
+                    num_str, new_i = cls._read_number(text, i)
+                    i = new_i
+                    token_text = ch + num_str
+                    token = cls._create_number_token(token_text, to_phys(start_col))
+                    tokens.append(token)
+                    pos = start_col + len(token_text)
+                    continue
+
             if i + 1 < n and text[i : i + 2] in MULTI_CHAR_OPS:
                 tokens.append(
                     Token(
@@ -236,7 +324,6 @@ class FileParser:
                 pos += 3
                 continue
 
-            # разделители
             if ch in SEPARATORS:
                 ttype, subtype = cls._classify_separator(ch)
                 tokens.append(Token(to_phys(start_col), ch, ttype, subtype))
@@ -244,19 +331,8 @@ class FileParser:
                 pos += 1
                 continue
 
-            # числа (и то, что похоже на число)
             if ch.isdigit() or (ch == "." and i + 1 < n and text[i + 1].isdigit()):
-                j = i
-                while j < n and (
-                    text[j].isdigit()
-                    or text[j] == "."
-                    or text[j] in "eE"
-                    or (text[j] in "+-" and j > i and text[j - 1] in "eE")
-                    or (text[j] in "jJ" and j == n - 1)
-                    or text[j] == "_"
-                ):
-                    j += 1
-
+                num_str, j = cls._read_number(text, i)
                 if j < n and text[j].isalpha() and text[j] not in "eEjJ":
                     j = i
                     while j < n and not text[j].isspace() and text[j] not in SEPARATORS:
@@ -271,7 +347,7 @@ class FileParser:
                     )
 
                 else:
-                    token_text = text[i:j]
+                    token_text = num_str
                     token = cls._create_number_token(token_text, to_phys(start_col))
 
                 tokens.append(token)
@@ -279,7 +355,6 @@ class FileParser:
                 pos = start_col + len(token_text)
                 continue
 
-            # имена / ключевые слова
             j = i
             while j < n and not text[j].isspace() and text[j] not in SEPARATORS:
                 if j + 1 < n and text[j : j + 2] in MULTI_CHAR_OPS:
@@ -316,8 +391,8 @@ class FileParser:
         token = Token(pos=state.start_pos, data=full_data, type=TokenType.MULT_STRING)
 
         remaining_text = text[end_idx + len(quote) :]
-        remaining_groups = []
-        new_state = None
+        remaining_groups: list[list[Token]] = []
+        new_state: MultilineState | None = None
         if remaining_text:
             remaining_groups, new_state = cls._scan_line(
                 remaining_text, 0, segments, strip_comments
@@ -401,7 +476,22 @@ class FileParser:
             token = Token(to_phys(start_col), full_str, TokenType.STRING)
             return token, j + 1, None
 
-    # Утилиты
+    @staticmethod
+    def _read_number(text: str, start: int) -> tuple[str, int]:
+        i = start
+        n = len(text)
+        while i < n and (
+            text[i].isdigit()
+            or text[i] == "."
+            or text[i] in "eE"
+            or (text[i] in "+-" and i > start and text[i - 1] in "eE")
+            or (text[i] in "jJ" and i == n - 1)
+            or text[i] == "_"
+        ):
+            i += 1
+
+        return text[start:i], i
+
     @staticmethod
     def _classify_separator(ch: str) -> tuple[TokenType, str | None]:
         if ch in "([{":
@@ -434,19 +524,19 @@ class FileParser:
 
         return Token(pos, value, TokenType.NUMBER)
 
-    @staticmethod
-    def _is_number(s: str) -> bool:
+    @classmethod
+    def _is_number(cls, s: str) -> bool:
         s_clean = s.replace("_", "")
         if s_clean.endswith(("j", "J")):
             return False
 
-        if re.match(r"^0[xX][0-9a-fA-F]+$", s_clean):
+        if cls._RE_HEX.match(s_clean):
             return True
 
-        if re.match(r"^0[bB][01]+$", s_clean):
+        if cls._RE_BIN.match(s_clean):
             return True
 
-        if re.match(r"^0[oO][0-7]+$", s_clean):
+        if cls._RE_OCT.match(s_clean):
             return True
 
         try:
@@ -477,30 +567,30 @@ class FileParser:
             return Token(pos, value, TokenType.NUMBER)
 
         return Token(pos, text, TokenType.NAME)
+
     @staticmethod
     def _split_on_semicolon(tokens: list[Token]) -> list[list[Token]]:
-        groups = []
-        current = []
+        groups: list[list[Token]] = []
+        current: list[Token] = []
         for t in tokens:
             if t.type == TokenType.OP and t.data == ";":
                 if current:
                     groups.append(current)
                     current = []
-        
+
             else:
                 current.append(t)
-        
+
         if current:
             groups.append(current)
-        
+
         return groups
 
-    # Определение отступов
     @classmethod
     def _assign_indents(
         cls, lines_info: list[tuple[list[Token], int, int]]
     ) -> list[Line]:
-        output = []
+        output: list[Line] = []
         indent_stack = [0]
         current_indent = 0
 
