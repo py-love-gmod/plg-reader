@@ -477,20 +477,22 @@ class FileParser:
             return Token(pos, value, TokenType.NUMBER)
 
         return Token(pos, text, TokenType.NAME)
-
     @staticmethod
     def _split_on_semicolon(tokens: list[Token]) -> list[list[Token]]:
         groups = []
         current = []
         for t in tokens:
             if t.type == TokenType.OP and t.data == ";":
-                groups.append(current)
-                current = []
-
+                if current:
+                    groups.append(current)
+                    current = []
+        
             else:
                 current.append(t)
-
-        groups.append(current)
+        
+        if current:
+            groups.append(current)
+        
         return groups
 
     # Определение отступов

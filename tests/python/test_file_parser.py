@@ -189,10 +189,9 @@ class TestMultilineStrings:
     def test_closing_quote_followed_by_code(self, tmp_path):
         code = 'x = """doc\nend"""; y = 1\n'
         lines = FileParser.parse(write_temp_file(tmp_path, code))
-        assert len(lines) == 3
+        assert len(lines) == 2
         assert [t.data for t in lines[0].tokens] == ["x", "=", '"""doc\nend"""']
-        assert lines[1].tokens == []
-        assert [t.data for t in lines[2].tokens] == ["y", "=", 1]
+        assert [t.data for t in lines[1].tokens] == ["y", "=", 1]
 
 
 # Комментарии
