@@ -10,7 +10,6 @@ from .dt import (
     MULTI_CHAR_OPS,
     SEPARATORS,
     Line,
-    MultilineState,
     Token,
     TokenType,
 )
@@ -44,6 +43,34 @@ def build_physical_mapper(
         return segments[0].phys_line, 0
 
     return mapper
+
+
+class _StringContinuation:
+    __slots__ = (
+        "prefix",
+        "quote",
+        "is_fstring",
+        "accumulated",
+        "pending_str",
+        "start_pos",
+        "tokens_before",
+    )
+
+    def __init__(
+        self,
+        prefix: str,
+        quote: str,
+        start_pos: tuple[int, int],
+        is_fstring: bool,
+        tokens_before: list[Token],
+    ):
+        self.prefix = prefix
+        self.quote = quote
+        self.is_fstring = is_fstring
+        self.accumulated: list = []
+        self.pending_str: str = ""
+        self.start_pos = start_pos
+        self.tokens_before = tokens_before
 
 
 class FileParser:
@@ -131,7 +158,6 @@ class FileParser:
             end_code_idx, is_continuation = FileParser._find_continuation_boundary(
                 raw_line
             )
-
             if is_continuation:
                 part = raw_line[:end_code_idx]
                 if current_parts:
@@ -182,38 +208,28 @@ class FileParser:
         strip_comments: bool,
     ) -> list[tuple[list[Token], int, int]]:
         result: list[tuple[list[Token], int, int]] = []
-        state: MultilineState | None = None
+        pending: _StringContinuation | None = None
 
         for text, segments in logical:
             first_line = segments[0].phys_line
             indent_spaces = len(text) - len(text.lstrip(" \t"))
 
-            if state is not None:
-                token_groups, new_state = cls._continue_multiline(
-                    text, segments, state, strip_comments
-                )
-                state = new_state
-                if not token_groups and state is None:
-                    result.append(([], first_line, indent_spaces))
-
-                else:
-                    for tokens in token_groups:
-                        if tokens or state is None:
-                            result.append((tokens, first_line, indent_spaces))
+            if pending is not None:
+                new_tokens, pending = cls._continue_string(text, segments, pending)
+                for tokens in new_tokens:
+                    result.append((tokens, first_line, indent_spaces))
 
                 continue
 
-            token_groups, new_state = cls._scan_line(
+            token_groups, pending = cls._scan_line(
                 text, indent_spaces, segments, strip_comments
             )
-            state = new_state
-            if not token_groups and state is None:
+            if not token_groups and pending is None:
                 result.append(([], first_line, indent_spaces))
 
             else:
                 for tokens in token_groups:
-                    if tokens or state is None:
-                        result.append((tokens, first_line, indent_spaces))
+                    result.append((tokens, first_line, indent_spaces))
 
         return result
 
@@ -224,7 +240,7 @@ class FileParser:
         indent_spaces: int,
         segments: list[LineSegment],
         strip_comments: bool,
-    ) -> tuple[list[list[Token]], MultilineState | None]:
+    ) -> tuple[list[list[Token]], _StringContinuation | None]:
         to_phys = build_physical_mapper(segments)
         tokens: list[Token] = []
         pos = indent_spaces
@@ -239,7 +255,6 @@ class FileParser:
                 continue
 
             start_col = pos
-
             if ch == "#":
                 if not strip_comments:
                     tokens.append(
@@ -248,28 +263,25 @@ class FileParser:
 
                 break
 
-            if ch in "\"'":
-                token, new_i, new_state = cls._read_string(text, i, start_col, to_phys)
-                if new_state is not None:
-                    new_state.tokens_before = tokens
-                    return [], new_state
-
-                if token is not None:
-                    tokens.append(token)
-
-                i = new_i
-                pos = start_col + (new_i - i)
-                continue
-
             j = i
             while j < n and text[j].lower() in "furb":
                 j += 1
 
-            if j > i and j < n and text[j] in "\"'":
-                token, new_i, new_state = cls._read_string(text, i, start_col, to_phys)
-                if new_state is not None:
-                    new_state.tokens_before = tokens
-                    return [], new_state
+            if j < n and text[j] in "\"'":
+                prefix = text[i:j].lower()
+                is_f = "f" in prefix
+                if is_f:
+                    token, new_i, pending = cls._read_fstring(
+                        text, i, start_col, to_phys, tokens
+                    )
+
+                else:
+                    token, new_i, pending = cls._read_simple_string(
+                        text, i, start_col, to_phys, tokens
+                    )
+
+                if pending is not None:
+                    return cls._split_on_semicolon(tokens), pending
 
                 if token is not None:
                     tokens.append(token)
@@ -304,29 +316,20 @@ class FileParser:
                     continue
 
             if i + 1 < n and text[i : i + 2] in MULTI_CHAR_OPS:
-                tokens.append(
-                    Token(
-                        to_phys(start_col),
-                        text[i : i + 2],
-                        TokenType.OP,
-                        subtype=text[i : i + 2],
-                    )
-                )
+                tokens.append(Token(to_phys(start_col), text[i : i + 2], TokenType.OP))
                 i += 2
                 pos += 2
                 continue
 
             if i + 2 < n and text[i : i + 3] == "...":
-                tokens.append(
-                    Token(to_phys(start_col), "...", TokenType.OP, subtype="...")
-                )
+                tokens.append(Token(to_phys(start_col), "...", TokenType.OP))
                 i += 3
                 pos += 3
                 continue
 
             if ch in SEPARATORS:
-                ttype, subtype = cls._classify_separator(ch)
-                tokens.append(Token(to_phys(start_col), ch, ttype, subtype))
+                ttype = cls._classify_separator(ch)
+                tokens.append(Token(to_phys(start_col), ch, ttype))
                 i += 1
                 pos += 1
                 continue
@@ -371,50 +374,14 @@ class FileParser:
         return cls._split_on_semicolon(tokens), None
 
     @classmethod
-    def _continue_multiline(
-        cls,
-        text: str,
-        segments: list[LineSegment],
-        state: MultilineState,
-        strip_comments: bool,
-    ) -> tuple[list[list[Token]], MultilineState | None]:
-        quote = state.quote
-        end_idx = text.find(quote)
-        if end_idx == -1:
-            state.parts.append(text + "\n")
-            return [], state
-
-        content_before = text[:end_idx]
-        state.parts.append(content_before)
-
-        full_data = state.prefix + state.quote + "".join(state.parts) + state.quote
-        token = Token(pos=state.start_pos, data=full_data, type=TokenType.MULT_STRING)
-
-        remaining_text = text[end_idx + len(quote) :]
-        remaining_groups: list[list[Token]] = []
-        new_state: MultilineState | None = None
-        if remaining_text:
-            remaining_groups, new_state = cls._scan_line(
-                remaining_text, 0, segments, strip_comments
-            )
-
-        all_tokens = state.tokens_before + [token]
-        if remaining_groups:
-            result = [all_tokens, *remaining_groups]
-
-        else:
-            result = [all_tokens]
-
-        return result, new_state
-
-    @classmethod
-    def _read_string(
+    def _read_simple_string(
         cls,
         text: str,
         i: int,
         start_col: int,
-        to_phys: Callable[[int], tuple[int, int]],
-    ) -> tuple[Token | None, int, MultilineState | None]:
+        to_phys: Callable,
+        tokens_before: list[Token],
+    ) -> tuple[Token | None, int, _StringContinuation | None]:
         n = len(text)
         prefix = ""
         while i < n and text[i].lower() in "furb":
@@ -423,33 +390,35 @@ class FileParser:
 
         quote_char = text[i]
         is_triple = i + 2 < n and text[i : i + 3] == quote_char * 3
-        quote_len = 3 if is_triple else 1
-        quote_token = quote_char * quote_len
-        i += quote_len
+        quote = quote_char * 3 if is_triple else quote_char
+        i += len(quote)
 
         if is_triple:
             j = i
             while j < n:
-                if text[j : j + 3] == quote_token:
+                if text[j : j + 3] == quote:
                     break
 
                 j += 1
 
             if j < n:
                 content = text[i:j]
-                full_str = prefix + quote_token + content + quote_token
-                token = Token(to_phys(start_col), full_str, TokenType.MULT_STRING)
+                token = Token(
+                    pos=to_phys(start_col),
+                    data=(prefix, quote + content + quote),
+                    type=TokenType.STRING,
+                )
                 return token, j + 3, None
 
             else:
-                content = text[i:]
-                state = MultilineState(
+                state = _StringContinuation(
                     prefix=prefix,
-                    quote=quote_token,
-                    parts=[content + "\n"],
+                    quote=quote,
                     start_pos=to_phys(start_col),
-                    tokens_before=[],
+                    is_fstring=False,
+                    tokens_before=tokens_before,
                 )
+                state.accumulated = [text[i:] + "\n"]
                 return None, i, state
 
         else:
@@ -472,9 +441,343 @@ class FileParser:
 
                 j += 1
 
-            full_str = prefix + quote_char + text[i:j] + quote_char
-            token = Token(to_phys(start_col), full_str, TokenType.STRING)
+            token = Token(
+                pos=to_phys(start_col),
+                data=(prefix, quote_char + text[i:j] + quote_char),
+                type=TokenType.STRING,
+            )
             return token, j + 1, None
+
+    @classmethod
+    def _read_fstring(
+        cls,
+        text: str,
+        i: int,
+        start_col: int,
+        to_phys: Callable,
+        tokens_before: list[Token],
+    ) -> tuple[Token | None, int, _StringContinuation | None]:
+        n = len(text)
+        prefix = ""
+        while i < n and text[i].lower() in "furb":
+            prefix += text[i]
+            i += 1
+
+        quote_char = text[i]
+        is_triple = i + 2 < n and text[i : i + 3] == quote_char * 3
+        quote = quote_char * 3 if is_triple else quote_char
+        i += len(quote)
+
+        accumulated, pending_str, found_end, new_i = cls._parse_fstring_parts(
+            text, i, quote, to_phys, [], ""
+        )
+
+        if found_end:
+            if pending_str:
+                accumulated.append(pending_str)
+
+            token = Token(
+                pos=to_phys(start_col),
+                data=(prefix, accumulated),
+                type=TokenType.FORMATTED_STRING,
+            )
+            return token, new_i, None
+
+        else:
+            state = _StringContinuation(
+                prefix=prefix,
+                quote=quote,
+                start_pos=to_phys(start_col),
+                is_fstring=True,
+                tokens_before=tokens_before,
+            )
+            state.accumulated = accumulated
+            state.pending_str = pending_str + "\n"
+            return None, new_i, state
+
+    @classmethod
+    def _parse_fstring_parts(
+        cls,
+        text: str,
+        start: int,
+        quote: str,
+        to_phys: Callable,
+        accumulated: list,
+        pending_str: str,
+    ) -> tuple[list, str, bool, int]:
+        n = len(text)
+        i = start
+        cur_literal = pending_str
+
+        while i < n:
+            if text[i : i + len(quote)] == quote:
+                return accumulated, cur_literal, True, i + len(quote)
+
+            if text[i] == "{":
+                if i + 1 < n and text[i + 1] == "{":
+                    cur_literal += "{"
+                    i += 2
+                    continue
+
+                if cur_literal:
+                    accumulated.append(cur_literal)
+                    cur_literal = ""
+
+                i += 1
+                expr_tokens, new_i = cls._parse_f_expression(text, i, to_phys)
+                accumulated.append(expr_tokens)
+                i = new_i
+                continue
+
+            if text[i] == "}":
+                if i + 1 < n and text[i + 1] == "}":
+                    cur_literal += "}"
+                    i += 2
+                    continue
+
+                cur_literal += "}"
+                i += 1
+                continue
+
+            cur_literal += text[i]
+            i += 1
+
+        return accumulated, cur_literal, False, i
+
+    @classmethod
+    def _parse_f_expression(
+        cls,
+        text: str,
+        i: int,
+        to_phys: Callable,
+    ) -> tuple[list[Token], int]:
+        depth = 1
+        j = i
+        in_string = False
+        string_char = ""
+        while j < len(text) and depth > 0:
+            c = text[j]
+            if in_string:
+                if c == "\\":
+                    j += 1
+
+                elif c == string_char:
+                    in_string = False
+
+            else:
+                if c in "\"'":
+                    in_string = True
+                    string_char = c
+
+                elif c == "{":
+                    depth += 1
+
+                elif c == "}":
+                    depth -= 1
+
+            j += 1
+
+        if depth != 0:
+            raise SyntaxError("f-string: mismatched '{' in expression")
+
+        expr_text = text[i : j - 1]
+
+        def inner_to_phys(local_col):
+            return to_phys(i + local_col)
+
+        tokens = cls._tokenize_expression(expr_text, inner_to_phys)
+        return tokens, j
+
+    @classmethod
+    def _tokenize_expression(
+        cls,
+        expr: str,
+        to_phys: Callable,
+    ) -> list[Token]:
+        tokens = []
+        i = 0
+        n = len(expr)
+        while i < n:
+            ch = expr[i]
+            if ch.isspace():
+                i += 1
+                continue
+
+            start_col = i
+            if ch in "\"'":
+                token, new_i = cls._read_simple_string_expression(
+                    expr, i, start_col, to_phys
+                )
+                tokens.append(token)
+                i = new_i
+                continue
+
+            if (
+                ch in "+-"
+                and i + 1 < n
+                and (expr[i + 1].isdigit() or expr[i + 1] == ".")
+            ):
+                prev = tokens[-1] if tokens else None
+                unary_ok = prev is None or prev.type in (
+                    TokenType.OP,
+                    TokenType.PARENTHESE_OPEN,
+                    TokenType.COMMA,
+                    TokenType.KWORD,
+                    TokenType.PARENTHESE_CLOSE,
+                    TokenType.DOT,
+                )
+                if unary_ok:
+                    i += 1
+                    num_str, new_i = cls._read_number(expr, i)
+                    i = new_i
+                    token_text = ch + num_str
+                    token = cls._create_number_token(token_text, to_phys(start_col))
+                    tokens.append(token)
+                    continue
+
+            if i + 1 < n and expr[i : i + 2] in MULTI_CHAR_OPS:
+                tokens.append(Token(to_phys(start_col), expr[i : i + 2], TokenType.OP))
+                i += 2
+                continue
+
+            if i + 2 < n and expr[i : i + 3] == "...":
+                tokens.append(Token(to_phys(start_col), "...", TokenType.OP))
+                i += 3
+                continue
+
+            if ch in SEPARATORS:
+                ttype = cls._classify_separator(ch)
+                tokens.append(Token(to_phys(start_col), ch, ttype))
+                i += 1
+                continue
+
+            if ch.isdigit() or (ch == "." and i + 1 < n and expr[i + 1].isdigit()):
+                num_str, j = cls._read_number(expr, i)
+                if j < n and expr[j].isalpha() and expr[j] not in "eEjJ":
+                    j = i
+                    while j < n and not expr[j].isspace() and expr[j] not in SEPARATORS:
+                        if j + 1 < n and expr[j : j + 2] in MULTI_CHAR_OPS:
+                            break
+
+                        j += 1
+
+                    token_text = expr[i:j]
+                    token = cls._create_name_or_number_token(
+                        token_text, to_phys(start_col)
+                    )
+
+                else:
+                    token_text = num_str
+                    token = cls._create_number_token(token_text, to_phys(start_col))
+
+                tokens.append(token)
+                i = j
+                continue
+
+            j = i
+            while j < n and not expr[j].isspace() and expr[j] not in SEPARATORS:
+                if j + 1 < n and expr[j : j + 2] in MULTI_CHAR_OPS:
+                    break
+
+                j += 1
+
+            token_text = expr[i:j]
+            token = cls._create_name_or_number_token(token_text, to_phys(start_col))
+            tokens.append(token)
+            i = j
+
+        return tokens
+
+    @classmethod
+    def _read_simple_string_expression(cls, text, i, start_col, to_phys):
+        quote = text[i]
+        i += 1
+        n = len(text)
+        j = i
+        escape = False
+        while j < n:
+            c = text[j]
+            if escape:
+                escape = False
+                j += 1
+                continue
+
+            if c == "\\":
+                escape = True
+                j += 1
+                continue
+
+            if c == quote:
+                break
+
+            j += 1
+
+        content = text[i:j]
+        token = Token(to_phys(start_col), quote + content + quote, TokenType.STRING)
+        return token, j + 1
+
+    @classmethod
+    def _continue_string(
+        cls,
+        text: str,
+        segments: list[LineSegment],
+        state: _StringContinuation,
+    ) -> tuple[list[list[Token]], _StringContinuation | None]:
+        to_phys = build_physical_mapper(segments)
+
+        if state.is_fstring:
+            state.pending_str += text + "\n"
+            accumulated, pending_str, found_end, end_i = cls._parse_fstring_parts(
+                text, 0, state.quote, to_phys, state.accumulated, state.pending_str
+            )
+            if found_end:
+                if pending_str:
+                    accumulated.append(pending_str)
+
+                token = Token(
+                    pos=state.start_pos,
+                    data=(state.prefix, accumulated),
+                    type=TokenType.FORMATTED_STRING,
+                )
+                remaining = text[end_i:]
+                if remaining.strip():
+                    result_groups, _ = cls._scan_line(
+                        remaining, 0, segments, strip_comments=False
+                    )
+                    return [state.tokens_before + [token]] + result_groups, None
+
+                else:
+                    return [state.tokens_before + [token]], None
+
+            else:
+                state.accumulated = accumulated
+                state.pending_str = pending_str
+                return [], state
+
+        else:
+            state.accumulated.append(text + "\n")
+            quote = state.quote
+            idx = text.find(quote)
+            if idx == -1:
+                return [], state
+
+            before = text[:idx]
+            parts = state.accumulated[:-1] + [before]
+            full_content = "".join(parts)
+            token = Token(
+                pos=state.start_pos,
+                data=(state.prefix, state.quote + full_content + state.quote),
+                type=TokenType.STRING,
+            )
+            remaining = text[idx + len(quote) :]
+            if remaining.strip():
+                result_groups, _ = cls._scan_line(
+                    remaining, 0, segments, strip_comments=False
+                )
+                return [state.tokens_before + [token]] + result_groups, None
+
+            else:
+                return [state.tokens_before + [token]], None
 
     @staticmethod
     def _read_number(text: str, start: int) -> tuple[str, int]:
@@ -493,20 +796,20 @@ class FileParser:
         return text[start:i], i
 
     @staticmethod
-    def _classify_separator(ch: str) -> tuple[TokenType, str | None]:
+    def _classify_separator(ch: str) -> TokenType:
         if ch in "([{":
-            return TokenType.PARENTHESE_OPEN, None
+            return TokenType.PARENTHESE_OPEN
 
         if ch in ")]}":
-            return TokenType.PARENTHESE_CLOSE, None
+            return TokenType.PARENTHESE_CLOSE
 
         if ch == ",":
-            return TokenType.COMMA, None
+            return TokenType.COMMA
 
         if ch == ".":
-            return TokenType.DOT, None
+            return TokenType.DOT
 
-        return TokenType.OP, ch
+        return TokenType.OP
 
     @staticmethod
     def _create_number_token(text: str, pos: tuple[int, int]) -> Token:

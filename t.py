@@ -11,6 +11,10 @@ s
 t
 """
 
+t = r"ddd"
+b"00"
+rf"foo {t=}"
+
 # Комментарий
 for t in text:  # Комментарий
     print(t.tokens)
