@@ -54,6 +54,8 @@ class _StringContinuation:
         "pending_str",
         "start_pos",
         "tokens_before",
+        "first_line",
+        "indent_spaces",
     )
 
     def __init__(
@@ -71,6 +73,8 @@ class _StringContinuation:
         self.pending_str: str = ""
         self.start_pos = start_pos
         self.tokens_before = tokens_before
+        self.first_line: int = 0
+        self.indent_spaces: int = 0
 
 
 class FileParser:
@@ -215,21 +219,35 @@ class FileParser:
             indent_spaces = len(text) - len(text.lstrip(" \t"))
 
             if pending is not None:
-                new_tokens, pending = cls._continue_string(text, segments, pending)
-                for tokens in new_tokens:
-                    result.append((tokens, first_line, indent_spaces))
+                groups, new_pending = cls._continue_string(text, segments, pending)
+                if new_pending is None:
+                    if groups:
+                        result.append(
+                            (groups[0], pending.first_line, pending.indent_spaces)
+                        )
+                        for g in groups[1:]:
+                            result.append((g, first_line, indent_spaces))
 
+                    else:
+                        result.append(([], pending.first_line, pending.indent_spaces))
+
+                pending = new_pending
                 continue
 
             token_groups, pending = cls._scan_line(
                 text, indent_spaces, segments, strip_comments
             )
-            if not token_groups and pending is None:
-                result.append(([], first_line, indent_spaces))
+            if pending is not None:
+                pending.first_line = first_line
+                pending.indent_spaces = indent_spaces
 
             else:
-                for tokens in token_groups:
-                    result.append((tokens, first_line, indent_spaces))
+                if not token_groups:
+                    result.append(([], first_line, indent_spaces))
+
+                else:
+                    for tokens in token_groups:
+                        result.append((tokens, first_line, indent_spaces))
 
         return result
 
@@ -240,7 +258,7 @@ class FileParser:
         indent_spaces: int,
         segments: list[LineSegment],
         strip_comments: bool,
-    ) -> tuple[list[list[Token]], _StringContinuation | None]:
+    ) -> tuple[list[list[Token]] | None, _StringContinuation | None]:
         to_phys = build_physical_mapper(segments)
         tokens: list[Token] = []
         pos = indent_spaces
@@ -281,7 +299,7 @@ class FileParser:
                     )
 
                 if pending is not None:
-                    return cls._split_on_semicolon(tokens), pending
+                    return None, pending
 
                 if token is not None:
                     tokens.append(token)
@@ -713,7 +731,9 @@ class FileParser:
             j += 1
 
         content = text[i:j]
-        token = Token(to_phys(start_col), quote + content + quote, TokenType.STRING)
+        token = Token(
+            to_phys(start_col), ("", quote + content + quote), TokenType.STRING
+        )
         return token, j + 1
 
     @classmethod
@@ -726,34 +746,32 @@ class FileParser:
         to_phys = build_physical_mapper(segments)
 
         if state.is_fstring:
-            state.pending_str += text + "\n"
             accumulated, pending_str, found_end, end_i = cls._parse_fstring_parts(
                 text, 0, state.quote, to_phys, state.accumulated, state.pending_str
             )
             if found_end:
                 if pending_str:
                     accumulated.append(pending_str)
-
                 token = Token(
                     pos=state.start_pos,
                     data=(state.prefix, accumulated),
                     type=TokenType.FORMATTED_STRING,
                 )
+                main_tokens = state.tokens_before + [token]
+                extra_groups = []
                 remaining = text[end_i:]
                 if remaining.strip():
-                    result_groups, _ = cls._scan_line(
+                    rem_groups, _ = cls._scan_line(
                         remaining, 0, segments, strip_comments=False
                     )
-                    return [state.tokens_before + [token]] + result_groups, None
+                    extra_groups.extend(rem_groups)  # pyright: ignore[reportArgumentType]
 
-                else:
-                    return [state.tokens_before + [token]], None
+                return [main_tokens] + extra_groups, None
 
             else:
                 state.accumulated = accumulated
-                state.pending_str = pending_str
+                state.pending_str = pending_str + "\n"
                 return [], state
-
         else:
             state.accumulated.append(text + "\n")
             quote = state.quote
@@ -769,15 +787,16 @@ class FileParser:
                 data=(state.prefix, state.quote + full_content + state.quote),
                 type=TokenType.STRING,
             )
+            main_tokens = state.tokens_before + [token]
+            extra_groups = []
             remaining = text[idx + len(quote) :]
             if remaining.strip():
-                result_groups, _ = cls._scan_line(
+                rem_groups, _ = cls._scan_line(
                     remaining, 0, segments, strip_comments=False
                 )
-                return [state.tokens_before + [token]] + result_groups, None
+                extra_groups.extend(rem_groups)  # pyright: ignore[reportArgumentType]
 
-            else:
-                return [state.tokens_before + [token]], None
+            return [main_tokens] + extra_groups, None
 
     @staticmethod
     def _read_number(text: str, start: int) -> tuple[str, int]:

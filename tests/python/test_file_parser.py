@@ -125,46 +125,75 @@ class TestStrings:
         lines = FileParser.parse(write_temp_file(tmp_path, "x = 'hello'\n"))
         t = lines[0].tokens[2]
         assert t.type == TokenType.STRING
-        assert t.data == "'hello'"
+        assert t.data == ("", "'hello'")
         assert t.pos == (1, 4)
 
     def test_double_quoted(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, 'x = "world"\n'))
         t = lines[0].tokens[2]
         assert t.type == TokenType.STRING
-        assert t.data == '"world"'
+        assert t.data == ("", '"world"')
 
     def test_f_string(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, 'x = f"val={1}"\n'))
         t = lines[0].tokens[2]
-        assert t.type == TokenType.STRING
-        assert t.data == 'f"val={1}"'
+        assert t.type == TokenType.FORMATTED_STRING
+        prefix, parts = t.data
+        assert prefix == "f"
+        assert isinstance(parts, list)
+        assert len(parts) == 2
+        assert parts[0] == "val="
+        assert isinstance(parts[1], list)
 
     def test_raw_string(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, r'x = r"\n"' + "\n"))
         t = lines[0].tokens[2]
         assert t.type == TokenType.STRING
-        assert t.data == r'r"\n"'
+        assert t.data == ("r", '"\\n"')
 
     def test_triple_quoted_single_line(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, 'x = """abc"""\n'))
         t = lines[0].tokens[2]
-        assert t.type == TokenType.MULT_STRING
-        assert t.data == '"""abc"""'
+        assert t.type == TokenType.STRING
+        assert t.data == ("", '"""abc"""')
 
     def test_triple_with_prefix(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, 'x = rf"""raw f"""\n'))
         t = lines[0].tokens[2]
-        assert t.type == TokenType.MULT_STRING
-        assert t.data == 'rf"""raw f"""'
+        assert t.type == TokenType.FORMATTED_STRING
+        assert t.data == ("rf", ["raw f"])
 
     def test_escaped_quote(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, "x = 'it\\'s'\n"))
         t = lines[0].tokens[2]
-        assert t.data == "'it\\'s'"
+        assert t.data == ("", "'it\\'s'")
+
+    def test_byte_string(self, tmp_path):
+        lines = FileParser.parse(write_temp_file(tmp_path, "x = b'ABC'\n"))
+        t = lines[0].tokens[2]
+        assert t.type == TokenType.STRING
+        assert t.data == ("b", "'ABC'")
+
+    def test_rb_string(self, tmp_path):
+        lines = FileParser.parse(write_temp_file(tmp_path, "x = rb'ABC'\n"))
+        t = lines[0].tokens[2]
+        assert t.type == TokenType.STRING
+        assert t.data == ("rb", "'ABC'")
+
+    def test_f_string_with_expressions(self, tmp_path):
+        code = 'x = f"hello {world} and {1+2}"\n'
+        lines = FileParser.parse(write_temp_file(tmp_path, code))
+        t = lines[0].tokens[2]
+        assert t.type == TokenType.FORMATTED_STRING
+        prefix, parts = t.data
+        assert prefix == "f"
+        assert len(parts) == 4
+        assert parts[0] == "hello "
+        assert isinstance(parts[1], list)
+        assert parts[2] == " and "
+        assert isinstance(parts[3], list)
 
 
-# Многострочные строки
 class TestMultilineStrings:
     def test_across_lines(self, tmp_path):
         code = 'x = """line1\nline2\nline3"""\n'
@@ -172,27 +201,41 @@ class TestMultilineStrings:
         assert len(lines) == 1
         tokens = lines[0].tokens
         assert len(tokens) == 3
-        assert tokens[2].type == TokenType.MULT_STRING
-        assert tokens[2].data == '"""line1\nline2\nline3"""'
+        assert tokens[2].type == TokenType.STRING
+        assert tokens[2].data == ("", '"""line1\nline2\nline3"""')
         assert tokens[2].pos[0] == 1
 
     def test_with_indent(self, tmp_path):
         code = 'def f():\n    x = """hello\n    world"""\n'
         lines = FileParser.parse(write_temp_file(tmp_path, code))
+        assert len(lines) == 2
         mult = lines[1].tokens[2]
-        assert mult.type == TokenType.MULT_STRING
-        assert mult.data == '"""hello\n    world"""'
+        assert mult.type == TokenType.STRING
+        assert mult.data == ("", '"""hello\n    world"""')
         assert mult.pos == (2, 8)
 
     def test_closing_quote_followed_by_code(self, tmp_path):
         code = 'x = """doc\nend"""; y = 1\n'
         lines = FileParser.parse(write_temp_file(tmp_path, code))
         assert len(lines) == 2
-        assert [t.data for t in lines[0].tokens] == ["x", "=", '"""doc\nend"""']
+        assert [t.data for t in lines[0].tokens] == ["x", "=", ("", '"""doc\nend"""')]
         assert [t.data for t in lines[1].tokens] == ["y", "=", 1]
 
+    def test_multiline_fstring(self, tmp_path):
+        code = 'x = f"""line {1}\nline {2}"""\n'
+        lines = FileParser.parse(write_temp_file(tmp_path, code))
+        assert len(lines) == 1
+        t = lines[0].tokens[2]
+        assert t.type == TokenType.FORMATTED_STRING
+        prefix, parts = t.data
+        assert prefix == "f"
+        assert len(parts) == 4
+        assert parts[0] == "line "
+        assert isinstance(parts[1], list)  
+        assert parts[2] == "\nline "
+        assert isinstance(parts[3], list)  
 
-# Комментарии
+
 class TestComments:
     def test_full_line_comment(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, "# comment\nx = 1\n"))
@@ -214,7 +257,6 @@ class TestComments:
         assert [t.data for t in lines[2].tokens] == ["y", "=", 2]
 
 
-# Продолжение строки (\)
 class TestLineContinuation:
     def test_simple(self, tmp_path):
         code = "x = \\\n    1\n"
@@ -234,10 +276,9 @@ class TestLineContinuation:
         code = 'x = "multi\\\nline"\n'
         lines = FileParser.parse(write_temp_file(tmp_path, code))
         t = lines[0].tokens[2]
-        assert "multiline" in t.data
+        assert t.data[1] == '"multiline"'  # содержимое без префикса
 
 
-# Разбивка по ';'
 class TestSemicolon:
     def test_simple_split(self, tmp_path):
         code = "a = 1; b = 2\n"
@@ -257,7 +298,6 @@ class TestSemicolon:
         assert [t.data for t in lines[2].tokens] == ["y", "=", 2]
 
 
-# Пустые строки и только комментарии
 class TestEmptyLines:
     def test_empty_line(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, "\n"))
@@ -276,7 +316,6 @@ class TestEmptyLines:
         assert lines[0].indent == 0
 
 
-# UTF-8 BOM и пустой файл
 class TestFileFeatures:
     def test_utf8_bom(self, tmp_path):
         file = tmp_path / "bom.py"
@@ -289,7 +328,6 @@ class TestFileFeatures:
         assert lines == []
 
 
-# Операторы и разделители
 class TestOperatorsAndSeparators:
     def test_parentheses_and_comma(self, tmp_path):
         lines = FileParser.parse(write_temp_file(tmp_path, "(a, b)\n"))
@@ -307,20 +345,17 @@ class TestOperatorsAndSeparators:
         lines = FileParser.parse(write_temp_file(tmp_path, "...\n"))
         t = lines[0].tokens[0]
         assert t.type == TokenType.OP
-        assert t.subtype == "..."
+        assert t.data == "..."
 
     def test_compound_operators(self, tmp_path):
         code = "x += 1; y -= 2; z // 3\n"
         lines = FileParser.parse(write_temp_file(tmp_path, code))
-        subtypes = [
-            t.subtype for line in lines for t in line.tokens if t.type == TokenType.OP
-        ]
-        assert "+=" in subtypes
-        assert "-=" in subtypes
-        assert "//" in subtypes
+        ops = [t.data for line in lines for t in line.tokens if t.type == TokenType.OP]
+        assert "+=" in ops
+        assert "-=" in ops
+        assert "//" in ops
 
 
-# Интеграционный тест
 class TestComplexStructure:
     def test_full_function(self, tmp_path):
         code = """\
@@ -335,7 +370,7 @@ def multiply(x, y):
         lines = FileParser.parse(write_temp_file(tmp_path, code))
         assert len(lines) == 7
         assert lines[0].tokens[0].data == "def"
-        assert lines[1].tokens[0].type == TokenType.MULT_STRING
+        assert lines[1].tokens[0].type == TokenType.STRING
         assert lines[2].tokens[0].data == "result"
         assert lines[3].tokens[0].data == "if"
         assert lines[4].tokens[0].data == "return"
@@ -360,7 +395,6 @@ class TestEdgeCases:
             TokenType.NUMBER,
         ]
         assert [t.data for t in tokens] == ["x", "=", -5, "+", -3.14, "-", 2]
-        assert tokens[5].type == TokenType.OP and tokens[5].data == "-"
 
     def test_comment_disables_continuation(self, tmp_path):
         code = "x = 1 # comment \\\ny = 2\n"
