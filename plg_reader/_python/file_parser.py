@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .dt import (
+from .file_parse_dt import (
     KWORD,
     KWORD_BAN,
     MULTI_CHAR_OPS,
@@ -15,7 +15,7 @@ from .dt import (
 )
 
 
-class LineSegment:
+class _LineSegment:
     __slots__ = ("offset", "phys_line", "phys_col_start", "length")
 
     def __init__(self, offset: int, phys_line: int, phys_col_start: int, length: int):
@@ -32,8 +32,8 @@ class LineSegment:
         return self.phys_line, self.phys_col_start + delta
 
 
-def build_physical_mapper(
-    segments: list[LineSegment],
+def _build_physical_mapper(
+    segments: list[_LineSegment],
 ) -> Callable[[int], tuple[int, int]]:
     def mapper(logical_col: int) -> tuple[int, int]:
         for seg in segments:
@@ -152,9 +152,9 @@ class FileParser:
         return 0, False
 
     @staticmethod
-    def _join_continued_lines(text: str) -> list[tuple[str, list[LineSegment]]]:
+    def _join_continued_lines(text: str) -> list[tuple[str, list[_LineSegment]]]:
         physical = text.splitlines(keepends=False)
-        logical: list[tuple[str, list[LineSegment]]] = []
+        logical: list[tuple[str, list[_LineSegment]]] = []
         current_parts: list[tuple[str, int, int, int]] = []
         line_num = 1
 
@@ -182,11 +182,11 @@ class FileParser:
                     current_parts.append((raw_line, line_num, 0, len(raw_line)))
 
                 full_text = ""
-                segments: list[LineSegment] = []
+                segments: list[_LineSegment] = []
                 for pt, ln, col_start, length in current_parts:
                     offset = len(full_text)
                     full_text += pt
-                    segments.append(LineSegment(offset, ln, col_start, length))
+                    segments.append(_LineSegment(offset, ln, col_start, length))
 
                 logical.append((full_text, segments))
                 current_parts.clear()
@@ -199,7 +199,7 @@ class FileParser:
             for pt, ln, col_start, length in current_parts:
                 offset = len(full_text)
                 full_text += pt
-                segments.append(LineSegment(offset, ln, col_start, length))
+                segments.append(_LineSegment(offset, ln, col_start, length))
 
             logical.append((full_text, segments))
 
@@ -208,7 +208,7 @@ class FileParser:
     @classmethod
     def _scan_logical_lines(
         cls,
-        logical: list[tuple[str, list[LineSegment]]],
+        logical: list[tuple[str, list[_LineSegment]]],
         strip_comments: bool,
     ) -> list[tuple[list[Token], int, int]]:
         result: list[tuple[list[Token], int, int]] = []
@@ -256,10 +256,10 @@ class FileParser:
         cls,
         text: str,
         indent_spaces: int,
-        segments: list[LineSegment],
+        segments: list[_LineSegment],
         strip_comments: bool,
     ) -> tuple[list[list[Token]] | None, _StringContinuation | None]:
-        to_phys = build_physical_mapper(segments)
+        to_phys = _build_physical_mapper(segments)
         tokens: list[Token] = []
         pos = indent_spaces
         i = indent_spaces
@@ -740,10 +740,10 @@ class FileParser:
     def _continue_string(
         cls,
         text: str,
-        segments: list[LineSegment],
+        segments: list[_LineSegment],
         state: _StringContinuation,
     ) -> tuple[list[list[Token]], _StringContinuation | None]:
-        to_phys = build_physical_mapper(segments)
+        to_phys = _build_physical_mapper(segments)
 
         if state.is_fstring:
             accumulated, pending_str, found_end, end_i = cls._parse_fstring_parts(

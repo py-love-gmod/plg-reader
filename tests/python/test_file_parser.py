@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from plg_reader._python.dt import TokenType
-from plg_reader._python.parse_file import FileParser
+from plg_reader._python.file_parse_dt import TokenType
+from plg_reader._python.file_parser import FileParser
 
 
 def write_temp_file(tmp_path: Path, content: str) -> Path:

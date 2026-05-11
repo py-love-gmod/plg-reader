@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from plg_reader._python.parse_file import FileParser
+from plg_reader._python.file_parser import FileParser
 
 text = FileParser.parse(Path(__file__), False)
 

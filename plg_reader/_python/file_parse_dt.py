@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
 
-SEPARATORS = frozenset("()[]{},:;.=+-*/%<>@\"'#\\")
+SEPARATORS = frozenset("()[]{},:;.=+-*/%<>@\"'#\\|&^~")
+
 MULTI_CHAR_OPS = frozenset(
     {
         "->",
@@ -69,7 +70,15 @@ KWORD = frozenset(
     }
 )
 
-KWORD_BAN = frozenset({"async", "global", "lambda", "nonlocal", "yield"})
+KWORD_BAN = frozenset(
+    {
+        "async",
+        "global",
+        "lambda",
+        "nonlocal",
+        "yield",
+    }
+)
 
 
 class TokenType(Enum):
@@ -81,15 +90,15 @@ class TokenType(Enum):
     PARENTHESE_CLOSE = auto()
     COMMA = auto()
     DOT = auto()
-    STRING = auto()  
-    FORMATTED_STRING = auto()  
+    STRING = auto()
+    FORMATTED_STRING = auto()
     COMMENT = auto()
 
 
 @dataclass
 class Token:
     pos: tuple[int, int]
-    data: Any 
+    data: Any
     type: TokenType
 
 
