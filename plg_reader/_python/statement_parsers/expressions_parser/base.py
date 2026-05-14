@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from ...file_parse_dt import Token, TokenType
-from ...ir_builder_dt import IRBinOp, IRBinOpType, IRNode, IRUnaryOp
+from ...ir_builder_dt import IRBinOp, IRBinOpType, IRIfExpr, IRNode, IRUnaryOp
+from .utils import require_not_none
 
 BINARY_PREC = {
     "or": 1,
@@ -103,9 +104,11 @@ class ExpressionParser:
         return node
 
     def parse_expression(self, min_prec: int = 0) -> IRNode:
-        tok = self.current()
-        if tok is None:
-            raise SyntaxError("Пустое выражение")
+        tok = require_not_none(self.current(), "выражении")
+        if tok.type == TokenType.OP and tok.data == ":=":
+            raise SyntaxError(
+                f"Walrus-оператор (:=) не поддерживается на строке {tok.pos[0]}, позиция {tok.pos[1]}"
+            )
 
         left = self.parse_prefix()
         while True:
@@ -122,13 +125,18 @@ class ExpressionParser:
             right = self.parse_expression(prec + 1)
             left = IRBinOp(pos=left.pos, op=op_to_enum(op.data), left=left, right=right)
 
+        tok = self.current()
+        if tok is not None and tok.type == TokenType.KWORD and tok.data == "if":
+            self.advance()
+            test = self.parse_expression()
+            self.expect(TokenType.KWORD, "else")
+            orelse = self.parse_expression(min_prec)
+            return IRIfExpr(pos=left.pos, test=test, body=left, orelse=orelse)
+
         return left
 
     def parse_prefix(self) -> IRNode:
-        tok = self.current()
-        if tok is None:
-            raise SyntaxError("Пустое выражение")
-
+        tok = require_not_none(self.current())
         if tok.type == TokenType.OP and tok.data in ("+", "-", "not", "~"):
             op = tok.data
             self.advance()

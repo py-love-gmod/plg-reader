@@ -3,6 +3,7 @@ from __future__ import annotations
 from ...file_parse_dt import TokenType
 from ...ir_builder_dt import IRCall, IRNode
 from .base import ExpressionParser
+from .utils import forbid_star, require_not_none
 
 
 def parse_call(parser: ExpressionParser, func: IRNode) -> IRCall:
@@ -12,26 +13,30 @@ def parse_call(parser: ExpressionParser, func: IRNode) -> IRCall:
     args: list[IRNode] = []
     kwargs: dict[str, IRNode] = {}
 
-    tok = parser.current()
-    if tok is not None and tok.type == TokenType.PARENTHESE_CLOSE:
+    tok = require_not_none(parser.current(), "аргументах вызова")
+    forbid_star(tok, "в аргументах вызова")
+
+    if tok.type == TokenType.PARENTHESE_CLOSE:
         parser.advance()
         return IRCall(pos=func.pos, func=func)
 
     while True:
-        tok = parser.current()
-        if tok is None:
-            raise SyntaxError("Неожиданный конец в аргументах вызова")
+        tok = require_not_none(parser.current(), "аргументах вызова")
+        forbid_star(tok, "в аргументах вызова")
 
         if tok.type == TokenType.NAME:
             start_pos = parser.pos
-            name = parser.advance().data  # pyright: ignore[reportOptionalMemberAccess] # гарантированно не None, т.к. проверено
+            name_tok = parser.advance()
+            assert name_tok is not None
+            name = name_tok.data
+
             eq_tok = parser.current()
             if (
                 eq_tok is not None
                 and eq_tok.type == TokenType.OP
                 and eq_tok.data == "="
             ):
-                parser.advance()  #
+                parser.advance()
                 value = parser.parse_expression()
                 kwargs[name] = value
 

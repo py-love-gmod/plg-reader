@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from ...file_parse_dt import TokenType
-from ...ir_builder_dt import IRConstant, IRFString, IRName, IRNode
+from ...ir_builder_dt import IRConstant, IRFString, IRName, IRNode, IRTuple
 from .base import ExpressionParser
+from .collections import parse_brace_collection, parse_list, parse_tuple
+from .utils import require_not_none
 
 
 def parse_atom(parser: ExpressionParser) -> IRNode:
-    tok = parser.current()
-    if tok is None:
-        raise SyntaxError("Неожиданный конец выражения")
+    tok = require_not_none(parser.current())
 
     if tok.type == TokenType.NUMBER:
         parser.advance()
@@ -27,7 +27,16 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
         return parse_fstring(parser)
 
     if tok.type == TokenType.PARENTHESE_OPEN:
-        return parse_paren(parser)
+        if tok.data == "(":
+            return parse_paren(parser)
+
+        elif tok.data == "[":
+            parser.advance()
+            return parse_list(parser, tok.pos)
+
+        elif tok.data == "{":
+            parser.advance()
+            return parse_brace_collection(parser, tok.pos)
 
     if tok.type == TokenType.PARENTHESE_CLOSE:
         raise SyntaxError(
@@ -40,22 +49,26 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
 
 
 def parse_paren(parser: ExpressionParser) -> IRNode:
-    parser.expect(TokenType.PARENTHESE_OPEN, "(")
-    cur = parser.current()
-    if cur is not None and cur.type == TokenType.PARENTHESE_CLOSE:
+    """Обрабатывает '(' ... ')' — группировка или кортеж."""
+    open_tok = parser.expect(TokenType.PARENTHESE_OPEN, "(")
+    tok = require_not_none(parser.current(), "кортежа")
+    if tok.type == TokenType.PARENTHESE_CLOSE:
         parser.advance()
-        raise SyntaxError(
-            f"Пустые скобки не поддерживаются на строке {cur.pos[0]}, позиция {cur.pos[1]}"
-        )
+        return IRTuple(pos=open_tok.pos, elements=[])
 
-    inner = parser.parse_expression()
-    parser.expect(TokenType.PARENTHESE_CLOSE, ")")
-    return inner
+    first = parser.parse_expression()
+    tok = require_not_none(parser.current())
+    if tok.type == TokenType.COMMA:
+        return parse_tuple(parser, open_tok.pos, first)
+
+    else:
+        parser.expect(TokenType.PARENTHESE_CLOSE, ")")
+        return first
 
 
 def parse_fstring(parser: ExpressionParser) -> IRFString:
     tok = parser.expect(TokenType.FORMATTED_STRING)
-    _, parts = tok.data  # parts: list[str | list[Token]]
+    _, parts = tok.data
     ir_parts = []
     for part in parts:
         if isinstance(part, str):
