@@ -910,14 +910,28 @@ class FileParser:
 
     @classmethod
     def _assign_indents(
-        cls, lines_info: list[tuple[list[Token], int, int]]
+        cls,
+        lines_info: list[tuple[list[Token], int, int]],
     ) -> list[Line]:
         output: list[Line] = []
         indent_stack = [0]
         current_indent = 0
 
         for tokens, line_num, indent_spaces in lines_info:
-            if not tokens or all(t.type == TokenType.COMMENT for t in tokens):
+            if not tokens:
+                output.append(Line(current_indent, line_num, tokens))
+                continue
+
+            if all(t.type == TokenType.COMMENT for t in tokens):
+                if indent_spaces > indent_stack[-1]:
+                    indent_stack.append(indent_spaces)
+                    current_indent += 1
+
+                elif indent_spaces < indent_stack[-1]:
+                    while indent_stack and indent_stack[-1] > indent_spaces:
+                        indent_stack.pop()
+                        current_indent -= 1
+
                 output.append(Line(current_indent, line_num, tokens))
                 continue
 

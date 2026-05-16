@@ -75,7 +75,7 @@ class IRBuilder:
     @classmethod
     def build(cls, lines: list[Line], file_path: Path) -> IRFile:
         file_node = IRFile(pos=(1, 0), path=file_path)
-        stack: list[tuple[int, list[IRNode]]] = [(-1, file_node.body)]
+        stack: list[tuple[int, list[IRNode]]] = [(0, file_node.body)]
         pending_decorators: list[IRDecorator] = []
 
         for line in lines:
@@ -106,6 +106,7 @@ class IRBuilder:
 
     @staticmethod
     def _close_blocks(indent: int, stack: list[tuple[int, list[IRNode]]]) -> None:
+        """Выталкиваем все уровни, чей ожидаемый отступ больше текущего."""
         while stack and indent < stack[-1][0]:
             stack.pop()
 
@@ -113,6 +114,7 @@ class IRBuilder:
     def _enter_block(
         indent: int, stack: list[tuple[int, list[IRNode]]], line_num: int
     ) -> None:
+        """Добавляем новый уровень стека, соответствующий телу последнего узла."""
         if not stack or not stack[-1][1]:
             raise SyntaxError(f"Неожиданный отступ на строке {line_num}")
 
