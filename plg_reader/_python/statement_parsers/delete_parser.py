@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from ..file_parse_dt import Line, TokenType
+from ..file_parse_dt import Line
 from ..ir_builder_dt import IRDelete, IRNode
-from .expressions_parser import ExpressionParser
+from ._helpers import is_kw, parse_expr_all, split_targets, tokens
 
 
 class DeleteParser:
     @staticmethod
     def parse(line: Line) -> IRNode | None:
-        tokens = line.tokens
-        if not tokens or tokens[0].type != TokenType.KWORD or tokens[0].data != "del":
+        t = tokens(line)
+        if not is_kw(t, "del"):
             return None
 
-        start_pos = tokens[0].pos
-        if len(tokens) < 2:
+        rest = t[1:]
+        if not rest:
             raise SyntaxError(f"Ожидалась цель после 'del' на строке {line.line_num}")
 
-        target = ExpressionParser(tokens[1:]).parse()
-        return IRDelete(pos=start_pos, targets=[target])
+        target_exprs = [
+            parse_expr_all(part) for part in split_targets(rest, line.line_num)
+        ]
+        return IRDelete(pos=t[0].pos, targets=target_exprs)

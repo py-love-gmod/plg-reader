@@ -7,6 +7,7 @@ from ..ir_builder_dt import (
     IRBinOpType,
     IRNode,
 )
+from ._helpers import parse_expr_all, split_targets, tokens
 from .expressions_parser import ExpressionParser
 
 AUG_OP_MAP = {
@@ -28,54 +29,59 @@ AUG_OP_MAP = {
 class AssignmentParser:
     @staticmethod
     def parse(line: Line) -> IRNode | None:
-        tokens = line.tokens
-        if not tokens:
-            return None
+        t = tokens(line)
 
         if (
-            len(tokens) >= 2
-            and tokens[0].type == TokenType.NAME
-            and tokens[1].type == TokenType.OP
-            and tokens[1].data == ":"
+            len(t) >= 2
+            and t[0].type == TokenType.NAME
+            and t[1].type == TokenType.OP
+            and t[1].data == ":"
         ):
             return AssignmentParser._parse_annotated(line)
 
         depth = 0
         eq_idx = -1
-        op_data = None
-        for i, t in enumerate(tokens):
-            if t.type == TokenType.PARENTHESE_OPEN:
+        for i, tok in enumerate(t):
+            if tok.type == TokenType.PARENTHESE_OPEN:
                 depth += 1
 
-            elif t.type == TokenType.PARENTHESE_CLOSE:
+            elif tok.type == TokenType.PARENTHESE_CLOSE:
                 depth -= 1
 
-            elif depth == 0 and t.type == TokenType.OP:
-                if t.data in AUG_OP_MAP or t.data == "=":
-                    eq_idx = i
-                    op_data = t.data
-                    break
+            elif (
+                depth == 0
+                and tok.type == TokenType.OP
+                and (tok.data in AUG_OP_MAP or tok.data == "=")
+            ):
+                eq_idx = i
+                break
 
         if eq_idx == -1:
             return None
 
-        op_data = tokens[eq_idx].data
-
+        op_data = t[eq_idx].data
         if op_data == ":=":
             raise SyntaxError(
                 f"Walrus-оператор (:=) не поддерживается на строке {line.line_num}"
             )
 
-        left_tokens = tokens[:eq_idx]
-        right_tokens = tokens[eq_idx + 1 :]
+        left_tokens = t[:eq_idx]
+        right_tokens = t[eq_idx + 1 :]
 
         if not left_tokens:
-            raise SyntaxError(...)
+            raise SyntaxError(
+                f"Пустая левая часть присваивания на строке {line.line_num}"
+            )
 
         if not right_tokens:
-            raise SyntaxError(...)
+            raise SyntaxError(
+                f"Пустая правая часть присваивания на строке {line.line_num}"
+            )
 
-        targets = AssignmentParser._parse_targets(left_tokens, line.line_num)
+        targets = [
+            ExpressionParser(p).parse()
+            for p in split_targets(left_tokens, line.line_num)
+        ]
         value = ExpressionParser(right_tokens).parse()
 
         is_aug = op_data != "="
@@ -90,70 +96,21 @@ class AssignmentParser:
         )
 
     @staticmethod
-    def _parse_targets(tokens: list, line_num: int) -> list[IRNode]:
-        """Разбивает список токенов по запятым верхнего уровня и каждую часть парсит ExpressionParser'ом."""
-        targets = []
-        start = 0
-        depth = 0
-        for i, t in enumerate(tokens):
-            if t.type == TokenType.PARENTHESE_OPEN:
-                depth += 1
-
-            elif t.type == TokenType.PARENTHESE_CLOSE:
-                depth -= 1
-
-            elif depth == 0 and t.type == TokenType.COMMA:
-                target_tokens = tokens[start:i]
-                if not target_tokens:
-                    raise SyntaxError(
-                        f"Пустая цель в присваивании на строке {line_num}"
-                    )
-
-                if (
-                    target_tokens[0].type == TokenType.OP
-                    and target_tokens[0].data == "*"
-                ):
-                    raise SyntaxError(
-                        f"Распаковка в целях присваивания запрещена на строке {line_num}"
-                    )
-
-                targets.append(ExpressionParser(target_tokens).parse())
-                start = i + 1
-
-        if start < len(tokens):
-            target_tokens = tokens[start:]
-            if (
-                target_tokens
-                and target_tokens[0].type == TokenType.OP
-                and target_tokens[0].data == "*"
-            ):
-                raise SyntaxError(
-                    f"Распаковка в целях присваивания запрещена на строке {line_num}"
-                )
-
-            targets.append(ExpressionParser(target_tokens).parse())
-
-        if not targets:
-            raise SyntaxError(f"Пустая левая часть присваивания на строке {line_num}")
-
-        return targets
-
-    @staticmethod
     def _parse_annotated(line: Line) -> IRNode:
-        tokens = line.tokens
-        target = ExpressionParser([tokens[0]]).parse()
-        rest = tokens[2:]
+        t = tokens(line)
+        target = ExpressionParser([t[0]]).parse()
+        rest = t[2:]
 
         depth = 0
         eq_idx = -1
-        for i, t in enumerate(rest):
-            if t.type == TokenType.PARENTHESE_OPEN:
+        for i, tok in enumerate(rest):
+            if tok.type == TokenType.PARENTHESE_OPEN:
                 depth += 1
 
-            elif t.type == TokenType.PARENTHESE_CLOSE:
+            elif tok.type == TokenType.PARENTHESE_CLOSE:
                 depth -= 1
 
-            elif depth == 0 and t.type == TokenType.OP and t.data == "=":
+            elif depth == 0 and tok.type == TokenType.OP and tok.data == "=":
                 eq_idx = i
                 break
 
@@ -165,10 +122,8 @@ class AssignmentParser:
             annotation_tokens = rest
             value_tokens = []
 
-        annotation = (
-            ExpressionParser(annotation_tokens).parse() if annotation_tokens else None
-        )
-        value = ExpressionParser(value_tokens).parse() if value_tokens else None
+        annotation = parse_expr_all(annotation_tokens) if annotation_tokens else None
+        value = parse_expr_all(value_tokens) if value_tokens else None
 
         return IRAnnotatedAssign(
             pos=target.pos,
