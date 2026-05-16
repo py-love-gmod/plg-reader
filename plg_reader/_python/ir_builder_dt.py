@@ -169,9 +169,7 @@ class IRClassDef(IRNode):
 
 @dataclass
 class IRDecorator(IRNode):
-    name: str
-    args: list[IRNode] = field(default_factory=list)
-    kwargs: dict[str, IRNode] = field(default_factory=dict)
+    expr: IRNode
 
 
 @dataclass
@@ -185,7 +183,7 @@ class IRAssign(IRNode):
 @dataclass
 class IRAnnotatedAssign(IRNode):
     target: IRNode
-    annotation: IRNode
+    annotation: IRNode | None = None
     value: IRNode | None = None
 
 
