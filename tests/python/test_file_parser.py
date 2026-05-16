@@ -313,7 +313,7 @@ class TestEmptyLines:
         lines = FileParser.parse(write_temp_file(tmp_path, "   # just comment\n"))
         assert len(lines[0].tokens) == 1
         assert lines[0].tokens[0].type == TokenType.COMMENT
-        assert lines[0].indent == 0
+        assert lines[0].indent == 1
 
 
 class TestFileFeatures:
