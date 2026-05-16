@@ -9,27 +9,57 @@ from .ir_builder_dt import (
     IRDecorator,
     IRFile,
     IRFunctionDef,
+    IRIf,
     IRImport,
     IRNode,
+    IRTry,
 )
 from .statement_parsers import (
     AssignmentParser,
     BreakParser,
+    ClassParser,
     CommentParser,
     ContinueParser,
     DecoratorParser,
+    DefParser,
     DeleteParser,
+    ElifElseParser,
+    ExceptFinallyParser,
     ExprStatementParser,
+    ForParser,
     FromImportParser,
+    IfParser,
     ImportParser,
     PassParser,
     RaiseParser,
     ReturnParser,
+    TryParser,
+    WhileParser,
+    WithParser,
+)
+from .statement_parsers._helpers import (
+    _ElifMarker,
+    _ElseMarker,
+    _ElseStub,
+    _ExceptMarker,
+    _FinallyMarker,
+    _FinallyStub,
 )
 
 
 class IRBuilder:
     _DISPATCH: dict[str | None, Type] = {
+        "def": DefParser,
+        "class": ClassParser,
+        "if": IfParser,
+        "elif": ElifElseParser,
+        "else": ElifElseParser,
+        "while": WhileParser,
+        "for": ForParser,
+        "try": TryParser,
+        "except": ExceptFinallyParser,
+        "finally": ExceptFinallyParser,
+        "with": WithParser,
         "return": ReturnParser,
         "del": DeleteParser,
         "raise": RaiseParser,
@@ -49,19 +79,25 @@ class IRBuilder:
         pending_decorators: list[IRDecorator] = []
 
         for line in lines:
-            tokens = line.tokens
-            if not tokens:
+            if not line.tokens:
                 continue
 
             cls._close_blocks(line.indent, stack)
-            if line.indent > stack[-1][0]:
+            if (
+                line.indent > stack[-1][0]
+                and stack[-1][1]
+                and hasattr(stack[-1][1][-1], "body")
+            ):
                 cls._enter_block(line.indent, stack, line.line_num)
 
-            node = cls._parse_statement(line)
-            if node is None:
+            nodes = cls._parse_statement(line)
+            if nodes is None:
                 continue
 
-            cls._place_node(node, pending_decorators, file_node.imports, stack[-1][1])
+            for node in nodes:
+                cls._place_node(
+                    node, pending_decorators, file_node.imports, stack[-1][1]
+                )
 
         if pending_decorators:
             raise SyntaxError("Декораторы без цели в конце файла")
@@ -70,15 +106,12 @@ class IRBuilder:
 
     @staticmethod
     def _close_blocks(indent: int, stack: list[tuple[int, list[IRNode]]]) -> None:
-        """Выбрасывает из стека все блоки с уровнем отступа больше текущего."""
         while stack and indent < stack[-1][0]:
             stack.pop()
 
     @staticmethod
     def _enter_block(
-        indent: int,
-        stack: list[tuple[int, list[IRNode]]],
-        line_num: int,
+        indent: int, stack: list[tuple[int, list[IRNode]]], line_num: int
     ) -> None:
         if not stack or not stack[-1][1]:
             raise SyntaxError(f"Неожиданный отступ на строке {line_num}")
@@ -91,7 +124,7 @@ class IRBuilder:
         stack.append((indent, body))
 
     @classmethod
-    def _parse_statement(cls, line: Line) -> IRNode | None:
+    def _parse_statement(cls, line: Line) -> list[IRNode] | None:
         tokens = line.tokens
         first = tokens[0]
 
@@ -109,9 +142,7 @@ class IRBuilder:
 
         parser = cls._DISPATCH.get(key)
         if parser is not None:
-            node = parser.parse(line)
-            if node is not None:
-                return node
+            return parser.parse(line)
 
         if key is None:
             return ExprStatementParser.parse(line)
@@ -125,12 +156,6 @@ class IRBuilder:
         imports: list[IRImport],
         current_body: list[IRNode],
     ) -> None:
-        """
-        Помещает распарсенный узел в правильную часть IRFile:
-        - импорты → в imports,
-        - декораторы → накапливаются в pending_decorators,
-        - остальные узлы → в current_body (с предварительным прикреплением декораторов).
-        """
         if isinstance(node, IRImport):
             imports.append(node)
             return
@@ -139,9 +164,46 @@ class IRBuilder:
             pending_decorators.append(node)
             return
 
+        # elif / else
+        if isinstance(node, _ElifMarker):
+            if not current_body or not isinstance(current_body[-1], IRIf):
+                raise SyntaxError("elif без предшествующего if")
+
+            elif_if = IRIf(pos=node.pos, test=node.test)
+            current_body[-1].orelse.append(elif_if)
+            current_body.append(elif_if)
+            return
+
+        if isinstance(node, _ElseMarker):
+            if not current_body or not isinstance(current_body[-1], IRIf):
+                raise SyntaxError("else без предшествующего if")
+
+            stub = _ElseStub(pos=node.pos)
+            current_body[-1].orelse.append(stub)
+            current_body.append(stub)
+            return
+
+        # except / finally
+        if isinstance(node, _ExceptMarker):
+            if not current_body or not isinstance(current_body[-1], IRTry):
+                raise SyntaxError("except без предшествующего try")
+
+            current_body[-1].handlers.append(node.handler)
+            current_body.append(node.handler)
+            return
+
+        if isinstance(node, _FinallyMarker):
+            if not current_body or not isinstance(current_body[-1], IRTry):
+                raise SyntaxError("finally без предшествующего try")
+
+            stub = _FinallyStub(pos=node.pos)
+            current_body[-1].finalbody = stub.body
+            current_body.append(stub)
+            return
+
         if pending_decorators:
             if IRBuilder._can_have_decorators(node):
-                node.decorators = pending_decorators.copy()  # type: ignore[attr-defined]
+                node.decorators = pending_decorators.copy()  # pyright: ignore[reportAttributeAccessIssue]
                 pending_decorators.clear()
 
             else:

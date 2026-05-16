@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from ...file_parse_dt import Token, TokenType
-from ...ir_builder_dt import IRBinOp, IRBinOpType, IRIfExpr, IRNode, IRUnaryOp
+from ...ir_builder_dt import (
+    IRBinOp,
+    IRBinOpType,
+    IRComment,
+    IRIfExpr,
+    IRNode,
+    IRUnaryOp,
+)
 from .utils import require_not_none
 
 BINARY_PREC = {
@@ -96,12 +103,25 @@ class ExpressionParser:
         return tok
 
     def parse(self) -> IRNode:
+        """Разобрать выражение целиком. Ошибка, если после выражения есть не-комментарий."""
         node = self.parse_expression()
         cur = self.current()
-        if cur is not None:
+        if cur is not None and cur.type != TokenType.COMMENT:
             raise SyntaxError(f"Неожиданный токен {cur.data} в конце выражения")
 
         return node
+
+    def parse_with_comments(self) -> list[IRNode]:
+        """Разобрать выражение и все завершающие комментарии. Возвращает список узлов."""
+        result = []
+        expr = self.parse_expression()
+        result.append(expr)
+        tok = self.current()
+        while tok is not None and tok.type == TokenType.COMMENT:
+            tok = self.advance()
+            result.append(IRComment(pos=tok.pos, text=tok.data))  # pyright: ignore[reportOptionalMemberAccess]
+
+        return result
 
     def parse_expression(self, min_prec: int = 0) -> IRNode:
         tok = require_not_none(self.current(), "выражении")

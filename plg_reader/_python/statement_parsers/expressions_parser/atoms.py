@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from ...file_parse_dt import TokenType
-from ...ir_builder_dt import IRConstant, IRFString, IRName, IRNode, IRTuple
+from ...ir_builder_dt import (
+    IRConstant,
+    IRFString,
+    IRFStringDebug,
+    IRName,
+    IRNode,
+    IRTuple,
+)
 from .base import ExpressionParser
 from .collections import parse_brace_collection, parse_list, parse_tuple
 from .utils import require_not_none
@@ -20,8 +27,8 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
 
     if tok.type == TokenType.STRING:
         parser.advance()
-        _, s = tok.data
-        return IRConstant(pos=tok.pos, value=s)
+        prefix, s = tok.data
+        return IRConstant(pos=tok.pos, value=s, prefix=prefix)
 
     if tok.type == TokenType.FORMATTED_STRING:
         return parse_fstring(parser)
@@ -68,14 +75,25 @@ def parse_paren(parser: ExpressionParser) -> IRNode:
 
 def parse_fstring(parser: ExpressionParser) -> IRFString:
     tok = parser.expect(TokenType.FORMATTED_STRING)
-    _, parts = tok.data
+    prefix, parts = tok.data
     ir_parts = []
     for part in parts:
         if isinstance(part, str):
             ir_parts.append(part)
 
         else:
-            sub = ExpressionParser(part)
-            ir_parts.append(sub.parse())
+            sub = type(parser)(part)
+            expr_node = sub.parse_expression()
+            cur = sub.current()
+            if cur is not None and cur.type == TokenType.OP and cur.data == "=":
+                sub.advance()
+                if sub.current() is not None:
+                    raise SyntaxError(
+                        f"Неожиданный токен после '=' в f-строке на строке {cur.pos[0]}, позиция {cur.pos[1]}"
+                    )
+                ir_parts.append(IRFStringDebug(pos=expr_node.pos, expr=expr_node))
 
-    return IRFString(pos=tok.pos, parts=ir_parts)
+            else:
+                ir_parts.append(expr_node)
+
+    return IRFString(pos=tok.pos, prefix=prefix, parts=ir_parts)

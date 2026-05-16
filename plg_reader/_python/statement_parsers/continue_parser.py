@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-from ..file_parse_dt import Line, TokenType
+from ..file_parse_dt import Line
 from ..ir_builder_dt import IRContinue, IRNode
+from ._helpers import extract_trailing_comment, is_kw, tokens
 
 
 class ContinueParser:
     @staticmethod
-    def parse(line: Line) -> IRNode | None:
-        tokens = line.tokens
-        if (
-            not tokens
-            or tokens[0].type != TokenType.KWORD
-            or tokens[0].data != "continue"
-        ):
+    def parse(line: Line) -> list[IRNode] | None:
+        t = tokens(line)
+        if not is_kw(t, "continue"):
             return None
 
-        return IRContinue(pos=tokens[0].pos)
+        _, comment = extract_trailing_comment(t, 1)
+        nodes: list[IRNode] = [IRContinue(pos=t[0].pos)]
+        if comment:
+            nodes.append(comment)
+
+        return nodes

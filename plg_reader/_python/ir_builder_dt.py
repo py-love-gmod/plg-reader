@@ -3,11 +3,88 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import IntEnum, auto
 from pathlib import Path
+from typing import Iterator, Literal
 
 
 @dataclass
 class IRNode:
     pos: tuple[int, int]
+
+    def walk(self) -> Iterator[IRNode]:
+        """Рекурсивно обходит узел и все его дочерние IRNode."""
+        yield self
+        for fld in self.__dataclass_fields__:
+            if fld == "pos":
+                continue
+
+            value = getattr(self, fld)
+            if isinstance(value, IRNode):
+                yield from value.walk()
+
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, IRNode):
+                        yield from item.walk()
+
+            elif isinstance(value, dict):
+                for item in value.values():
+                    if isinstance(item, IRNode):
+                        yield from item.walk()
+
+    def pretty(self, indent: int = 0) -> str:
+        lines = []
+        prefix = "  " * indent
+        lines.append(f"{prefix}{self.__class__.__name__}(")
+        lines.append(f"{prefix}  pos=({self.pos[0]}, {self.pos[1]})")
+        for fld in self.__dataclass_fields__:
+            if fld == "pos":
+                continue
+
+            value = getattr(self, fld)
+            if isinstance(value, list):
+                if value:
+                    lines.append(f"{prefix}  {fld}=[")
+                    for item in value:
+                        if isinstance(item, IRNode):
+                            lines.append(item.pretty(indent + 2))
+
+                        else:
+                            lines.append(f"{prefix}    {item!r}")
+
+                    lines.append(f"{prefix}  ]")
+
+                else:
+                    lines.append(f"{prefix}  {fld}=[]")
+
+            elif isinstance(value, dict):
+                if value:
+                    lines.append(f"{prefix}  {fld}={{")
+                    for k, v in value.items():
+                        if isinstance(v, IRNode):
+                            lines.append(f"{prefix}    {k}:")
+                            lines.append(v.pretty(indent + 3))
+
+                        else:
+                            lines.append(f"{prefix}    {k}: {v!r}")
+
+                    lines.append(f"{prefix}  }}")
+
+                else:
+                    lines.append(f"{prefix}  {fld}={{}}")
+
+            elif isinstance(value, IRNode):
+                lines.append(f"{prefix}  {fld}=")
+                lines.append(value.pretty(indent + 2))
+
+            else:
+                if fld == "value" and hasattr(self, "prefix") and self.prefix:  # pyright: ignore[reportAttributeAccessIssue]
+                    lines.append(f"{prefix}  {fld}={self.prefix}{value!r}")  # pyright: ignore[reportAttributeAccessIssue]
+
+                else:
+                    lines.append(f"{prefix}  {fld}={value!r}")
+
+        lines.append(f"{prefix})")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -33,6 +110,7 @@ class IRImport(IRNode):
 @dataclass
 class IRConstant(IRNode):
     value: object
+    prefix: str = ""
 
 
 @dataclass
@@ -137,9 +215,13 @@ class IRDict(IRNode):
 
 @dataclass
 class IRFString(IRNode):
-    """Требует понижения перед кодогенерацией"""
+    prefix: str = ""
+    parts: list[IRNode | str] = field(default_factory=list)
 
-    parts: list[IRNode | str]
+
+@dataclass
+class IRFStringDebug(IRNode):
+    expr: IRNode
 
 
 # Операторы
@@ -155,6 +237,7 @@ class IRFunctionDef(IRNode):
 @dataclass
 class IRParam(IRNode):
     name: str
+    kind: Literal["positional", "star_arg", "kw_arg", "star", "slash"] = "positional"
     annotation: IRNode | None = None
     default: IRNode | None = None
 
@@ -256,6 +339,18 @@ class IRTry(IRNode):
     handlers: list[IRExceptHandler] = field(default_factory=list)
     orelse: list[IRNode] = field(default_factory=list)
     finalbody: list[IRNode] = field(default_factory=list)
+
+
+@dataclass
+class IRWithItem(IRNode):
+    context_expr: IRNode
+    optional_vars: IRNode | None = None
+
+
+@dataclass
+class IRWith(IRNode):
+    items: list[IRWithItem] = field(default_factory=list)
+    body: list[IRNode] = field(default_factory=list)
 
 
 @dataclass

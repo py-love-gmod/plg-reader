@@ -7,9 +7,14 @@ from .expressions_parser import ExpressionParser
 
 class ExprStatementParser:
     @staticmethod
-    def parse(line: Line) -> IRNode | None:
+    def parse(line: Line) -> list[IRNode] | None:
         if not line.tokens:
             return None
 
-        expr = ExpressionParser(line.tokens).parse()
-        return IRExprStatement(pos=expr.pos, expr=expr)
+        parser = ExpressionParser(line.tokens)
+        nodes = parser.parse_with_comments()
+        if not nodes:
+            return None
+
+        nodes[0] = IRExprStatement(pos=nodes[0].pos, expr=nodes[0])
+        return nodes

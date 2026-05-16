@@ -34,13 +34,13 @@ def build_python_files_dir(
     for file in path.rglob("*.py"):
         result[file.relative_to(path).as_posix()] = IRBuilder.build(
             FileParser.parse(file, strip_comments),
-            path,
+            file,
         )
 
     for file in path.rglob("*.pyi"):
         result[file.relative_to(path).as_posix()] = IRBuilder.build(
             FileParser.parse(file, strip_comments),
-            path,
+            file,
         )
 
     if not result:
