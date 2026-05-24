@@ -1,3 +1,6 @@
+import os
+import sysconfig
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .file_parser import FileParser
@@ -30,20 +33,32 @@ def build_python_files_dir(
     if not path.is_dir():
         raise NotADirectoryError(f"Ожидалась директория, но путь ведёт к файлу: {path}")
 
-    result = {}
-    for file in path.rglob("*.py"):
-        result[file.relative_to(path).as_posix()] = IRBuilder.build(
-            FileParser.parse(file, strip_comments),
-            file,
-        )
+    files = list(path.rglob("*.py")) + list(path.rglob("*.pyi"))
+    if not files:
+        raise ValueError(f"Нет .py/.pyi файлов в {path}")
 
-    for file in path.rglob("*.pyi"):
-        result[file.relative_to(path).as_posix()] = IRBuilder.build(
-            FileParser.parse(file, strip_comments),
-            file,
-        )
+    cpus = os.cpu_count() or 1
+    workers = min(cpus, len(files))
 
-    if not result:
-        raise ValueError(f"В директории {path} не найдено .py или .pyi файлов")
+    if workers <= 1:
+        return {
+            f.relative_to(path).as_posix(): build_python_file(f, strip_comments)
+            for f in files
+        }
+
+    if bool(sysconfig.get_config_var("Py_GIL_DISABLED")):
+        Executor = ThreadPoolExecutor
+
+    else:
+        Executor = ProcessPoolExecutor
+
+    with Executor(max_workers=workers) as executor:
+        future_to_file = {
+            executor.submit(build_python_file, f, strip_comments): f for f in files
+        }
+        result = {}
+        for future in as_completed(future_to_file):
+            f = future_to_file[future]
+            result[f.relative_to(path).as_posix()] = future.result()
 
     return result
