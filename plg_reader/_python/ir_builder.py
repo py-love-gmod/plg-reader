@@ -134,7 +134,7 @@ class IRBuilder:
             return CommentParser.parse(line)
 
         if first.type == TokenType.KWORD:
-            key: str | None = first.data
+            key = first.data
 
         elif first.type == TokenType.OP and first.data == "@":
             key = "@"
@@ -144,7 +144,14 @@ class IRBuilder:
 
         parser = cls._DISPATCH.get(key)
         if parser is not None:
-            return parser.parse(line)
+            nodes = parser.parse(line)
+            if nodes is not None:
+                return nodes
+
+            if key is None:
+                return ExprStatementParser.parse(line)
+
+            return None
 
         if key is None:
             return ExprStatementParser.parse(line)
