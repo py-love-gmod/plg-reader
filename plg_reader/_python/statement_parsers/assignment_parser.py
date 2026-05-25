@@ -150,7 +150,14 @@ class AssignmentParser:
             )
 
         left_parts = split_targets(left_tokens, line.line_num)
-        targets = [ExpressionParser(p).parse() for p in left_parts]
+        targets: list[IRNode] = []
+        if len(left_parts) == 1:
+            targets.append(ExpressionParser(left_parts[0]).parse())
+
+        else:
+            elements = [ExpressionParser(p).parse() for p in left_parts]
+            targets.append(IRTuple(pos=elements[0].pos, elements=elements))
+
         right_parts = split_balanced(right_significant, line.line_num, allow_star=False)
         if len(right_parts) == 1:
             value = ExpressionParser(right_significant).parse()
