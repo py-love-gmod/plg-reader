@@ -118,8 +118,9 @@ class ExpressionParser:
         result.append(expr)
         tok = self.current()
         while tok is not None and tok.type == TokenType.COMMENT:
-            tok = self.advance()
-            result.append(IRComment(pos=tok.pos, text=tok.data))  # pyright: ignore[reportOptionalMemberAccess]
+            result.append(IRComment(pos=tok.pos, text=tok.data))
+            self.advance()
+            tok = self.current()
 
         return result
 
