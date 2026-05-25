@@ -40,13 +40,16 @@ def test_if_elif_else(parse_code):
     ir = parse_code(code)
     if_node = ir.body[0]
     assert isinstance(if_node, IRIf)
-    assert len(if_node.orelse) == 2
+    assert len(if_node.orelse) == 1
     elif_node = if_node.orelse[0]
     assert isinstance(elif_node, IRIf)
-    elif_test = elif_node.test
-    assert isinstance(elif_test, IRName)
-    assert elif_test.name == "b"
-    assert not isinstance(if_node.orelse[1], IRIf)
+    elif_if: IRIf = elif_node
+    assert isinstance(elif_if.test, IRName)
+    assert elif_if.test.name == "b"
+    assert len(elif_if.orelse) == 1
+    else_block = elif_if.orelse[0]
+    assert len(else_block.body) == 1  # type: ignore
+    assert isinstance(else_block.body[0], IRPass)  # type: ignore
 
 
 def test_while(parse_code):
