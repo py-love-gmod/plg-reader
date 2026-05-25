@@ -45,6 +45,10 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
             parser.advance()
             return parse_brace_collection(parser, tok.pos)
 
+    if tok.type == TokenType.OP and tok.data == '...':
+        parser.advance()
+        return IRConstant(pos=tok.pos, value=Ellipsis)
+
     if tok.type == TokenType.PARENTHESE_CLOSE:
         raise SyntaxError(
             f"Неожиданная закрывающая скобка на строке {tok.pos[0]}, позиция {tok.pos[1]}"
