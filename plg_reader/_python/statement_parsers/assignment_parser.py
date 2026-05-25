@@ -46,8 +46,8 @@ class AssignmentParser:
         ):
             return AssignmentParser._parse_annotated(line)
 
+        eq_indices = []
         depth = 0
-        eq_idx = -1
         for i, tok in enumerate(t):
             if tok.type == TokenType.PARENTHESE_OPEN:
                 depth += 1
@@ -60,20 +60,83 @@ class AssignmentParser:
                 and tok.type == TokenType.OP
                 and (tok.data in AUG_OP_MAP or tok.data == "=")
             ):
-                eq_idx = i
-                break
+                eq_indices.append(i)
 
-        if eq_idx == -1:
+        if not eq_indices:
             return None
 
-        op_data = t[eq_idx].data
-        if op_data == ":=":
+        for idx in eq_indices:
+            if t[idx].data == ":=":
+                raise SyntaxError(
+                    f"Walrus-оператор (:=) не поддерживается на строке {line.line_num}"
+                )
+
+        if len(eq_indices) == 1:
+            op_data = t[eq_indices[0]].data
+            is_aug = op_data != "="
+            return AssignmentParser._parse_single_eq(t, eq_indices[0], line, is_aug)
+
+        for idx in eq_indices:
+            if t[idx].data != "=":
+                raise SyntaxError(
+                    f"Составное присваивание в цепочке не допускается на строке {line.line_num}"
+                )
+
+        parts = []
+        prev = 0
+        for idx in eq_indices:
+            parts.append(t[prev:idx])
+            prev = idx + 1
+
+        parts.append(t[prev:])
+
+        target_tokens_list = parts[:-1]
+        value_tokens = parts[-1]
+
+        if not all(target_tokens_list):
+            raise SyntaxError(f"Пустая цель в присваивании на строке {line.line_num}")
+
+        right_significant, comment = extract_trailing_comment(value_tokens, 0)
+        if not right_significant:
             raise SyntaxError(
-                f"Walrus-оператор (:=) не поддерживается на строке {line.line_num}"
+                f"Пустая правая часть присваивания на строке {line.line_num}"
             )
 
-        left_tokens = t[:eq_idx]
-        right_tokens = t[eq_idx + 1 :]
+        right_parts = split_balanced(right_significant, line.line_num, allow_star=False)
+        if len(right_parts) == 1:
+            value = ExpressionParser(right_significant).parse()
+
+        else:
+            elements = [ExpressionParser(p).parse() for p in right_parts]
+            value = IRTuple(pos=elements[0].pos, elements=elements)
+
+        targets = []
+        for target_tokens in target_tokens_list:
+            sub_parts = split_targets(target_tokens, line.line_num)
+            if len(sub_parts) == 1:
+                targets.append(ExpressionParser(sub_parts[0]).parse())
+
+            else:
+                elements = [ExpressionParser(p).parse() for p in sub_parts]
+                targets.append(IRTuple(pos=elements[0].pos, elements=elements))
+
+        node: IRNode = IRAssign(
+            pos=targets[0].pos,
+            targets=targets,
+            value=value,
+            is_aug=False,
+            aug_op=None,
+        )
+        nodes: list[IRNode] = [node]
+        if comment:
+            nodes.append(comment)
+
+        return nodes
+
+    @staticmethod
+    def _parse_single_eq(tokens_list, eq_idx, line, is_aug):
+        left_tokens = tokens_list[:eq_idx]
+        right_tokens = tokens_list[eq_idx + 1 :]
 
         if not left_tokens:
             raise SyntaxError(
@@ -96,22 +159,22 @@ class AssignmentParser:
             elements = [ExpressionParser(p).parse() for p in right_parts]
             value = IRTuple(pos=elements[0].pos, elements=elements)
 
-        is_aug = op_data != "="
-        aug_op = AUG_OP_MAP.get(op_data) if is_aug else None
-        nodes = [
-            IRAssign(
-                pos=targets[0].pos,
-                targets=targets,
-                value=value,
-                is_aug=is_aug,
-                aug_op=aug_op,
-            )
-        ]
+        op_data = tokens_list[eq_idx].data if is_aug else "="
+        is_aug_flag = op_data != "="
+        aug_op = AUG_OP_MAP.get(op_data) if is_aug_flag else None
 
+        node: IRNode = IRAssign(
+            pos=targets[0].pos,
+            targets=targets,
+            value=value,
+            is_aug=is_aug_flag,
+            aug_op=aug_op,
+        )
+        nodes: list[IRNode] = [node]
         if comment:
-            nodes.append(comment)  # pyright: ignore[reportArgumentType]
+            nodes.append(comment)
 
-        return nodes  # pyright: ignore[reportReturnType]
+        return nodes
 
     @staticmethod
     def _parse_annotated(line: Line) -> list[IRNode] | None:
@@ -143,16 +206,14 @@ class AssignmentParser:
 
         annotation = parse_expr_all(annotation_tokens) if annotation_tokens else None
         value = parse_expr_all(value_tokens) if value_tokens else None
-        nodes = [
-            IRAnnotatedAssign(
-                pos=target.pos,
-                target=target,
-                annotation=annotation,
-                value=value,
-            )
-        ]
-
+        node: IRNode = IRAnnotatedAssign(
+            pos=target.pos,
+            target=target,
+            annotation=annotation,
+            value=value,
+        )
+        nodes: list[IRNode] = [node]
         if comment:
-            nodes.append(comment)  # pyright: ignore[reportArgumentType]
+            nodes.append(comment)
 
-        return nodes  # pyright: ignore[reportReturnType]
+        return nodes
