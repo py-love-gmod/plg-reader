@@ -22,6 +22,12 @@ class WithParser:
                 f"Ожидалось выражение после 'with' на строке {line.line_num}"
             )
 
+        colon_idx = next((i for i, tok in enumerate(clean) if tok.data == ":"), -1)
+        if colon_idx == -1:
+            raise SyntaxError(f"Ожидалось ':' на строке {line.line_num}")
+
+        clean = clean[:colon_idx]
+
         items = parse_with_items(clean, 0)
         nodes: list[IRNode] = [IRWith(pos=t[0].pos, items=items)]
         if comment:
