@@ -1,18 +1,13 @@
-from dataclasses import dataclass
-
 from ..file_parse_dt import Line
 from ..ir_builder_dt import IRNode
-from ._helpers import extract_trailing_comment, is_kw, parse_condition, tokens
-
-
-@dataclass
-class _ElifMarker(IRNode):
-    test: IRNode
-
-
-@dataclass
-class _ElseMarker(IRNode):
-    pass
+from ._helpers import (
+    ElifMarker,
+    ElseMarker,
+    extract_trailing_comment,
+    is_kw,
+    parse_condition,
+    tokens,
+)
 
 
 class ElifElseParser:
@@ -33,7 +28,7 @@ class ElifElseParser:
                 )
 
             test = parse_condition(cond_tokens, 0)
-            nodes: list[IRNode] = [_ElifMarker(pos=t[0].pos, test=test)]
+            nodes: list[IRNode] = [ElifMarker(pos=t[0].pos, test=test)]
             if comment:
                 nodes.append(comment)
 
@@ -41,7 +36,7 @@ class ElifElseParser:
 
         elif is_kw(t, "else"):
             _, comment = extract_trailing_comment(t, 1)
-            nodes: list[IRNode] = [_ElseMarker(pos=t[0].pos)]
+            nodes: list[IRNode] = [ElseMarker(pos=t[0].pos)]
             if comment:
                 nodes.append(comment)
 
