@@ -23,7 +23,7 @@ def test_import_as(parse_code):
     ir = parse_code("import os.path as path")
     imp = ir.imports[0]
     assert imp.modules == ["os.path"]
-    assert imp.names == ["path"]
+    assert imp.names == [("os.path", "path")]
 
 
 def test_from_import(parse_code):
@@ -46,7 +46,7 @@ def test_relative_import(parse_code):
     ir = parse_code("from . import module")
     imp = ir.imports[0]
     assert imp.level == 1
-    assert imp.modules == [""]
+    assert imp.modules == []
     assert imp.names == ["module"]
 
 
