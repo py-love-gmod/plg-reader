@@ -86,9 +86,58 @@ class FileParser:
     def parse(cls, file_path: Path, strip_comments: bool = False) -> list[Line]:
         text = file_path.read_text("utf-8-sig")
         compile(text, file_path.name, "exec")
-        logical_lines = cls._join_continued_lines(text)
+        explicit_lines = cls._join_continued_lines(text)
+        logical_lines = cls._join_implicit_continued_lines(explicit_lines)
         lines_with_tokens = cls._scan_logical_lines(logical_lines, strip_comments)
         return cls._assign_indents(lines_with_tokens)
+
+    @staticmethod
+    def _has_unclosed_brackets(text: str) -> bool:
+        depth = 0
+        in_string = False
+        string_char = ""
+        escape = False
+        for ch in text:
+            if not in_string:
+                if ch == "#":
+                    break
+
+                elif ch in "([{":
+                    depth += 1
+
+                elif ch in ")]}":
+                    depth -= 1
+
+                elif ch in "\"'":
+                    in_string = True
+                    string_char = ch
+
+            else:
+                if escape:
+                    escape = False
+
+                elif ch == "\\":
+                    escape = True
+
+                elif ch == string_char:
+                    in_string = False
+
+        return depth > 0
+
+    @staticmethod
+    def _join_implicit_continued_lines(
+        explicit: list[tuple[str, list[_LineSegment]]],
+    ) -> list[tuple[str, list[_LineSegment]]]:
+        result: list[tuple[str, list[_LineSegment]]] = []
+        for text, segments in explicit:
+            if result and FileParser._has_unclosed_brackets(result[-1][0]):
+                prev_text, prev_segments = result[-1]
+                result[-1] = (prev_text + text, prev_segments + segments)
+
+            else:
+                result.append((text, segments))
+
+        return result
 
     @staticmethod
     def _find_continuation_boundary(line: str) -> tuple[int, bool]:
