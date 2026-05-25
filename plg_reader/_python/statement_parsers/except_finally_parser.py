@@ -1,24 +1,14 @@
-from dataclasses import dataclass
-
 from ..file_parse_dt import Line, TokenType
 from ..ir_builder_dt import IRExceptHandler, IRNode
 from ._helpers import (
+    ExceptMarker,
+    FinallyMarker,
     extract_trailing_comment,
     is_kw,
     parse_expr_all,
     parse_name,
     tokens,
 )
-
-
-@dataclass
-class _ExceptMarker(IRNode):
-    handler: IRExceptHandler
-
-
-@dataclass
-class _FinallyMarker(IRNode):
-    pass
 
 
 class ExceptFinallyParser:
@@ -33,6 +23,12 @@ class ExceptFinallyParser:
                 )
 
             significant, comment = extract_trailing_comment(rest, 0)
+
+            colon_idx = next(
+                (i for i, tok in enumerate(significant) if tok.data == ":"), -1
+            )
+            if colon_idx != -1:
+                significant = significant[:colon_idx]
 
             typ = None
             name = None
@@ -62,15 +58,15 @@ class ExceptFinallyParser:
                     typ = parse_expr_all(significant)
 
             handler = IRExceptHandler(pos=t[0].pos, type=typ, name=name)
-            nodes: list[IRNode] = [_ExceptMarker(pos=t[0].pos, handler=handler)]
+            nodes: list[IRNode] = [ExceptMarker(pos=t[0].pos, handler=handler)]
             if comment:
                 nodes.append(comment)
 
             return nodes
 
         elif is_kw(t, "finally"):
+            nodes: list[IRNode] = [FinallyMarker(pos=t[0].pos)]
             _, comment = extract_trailing_comment(t, 1)
-            nodes: list[IRNode] = [_FinallyMarker(pos=t[0].pos)]
             if comment:
                 nodes.append(comment)
 
