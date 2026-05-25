@@ -204,11 +204,35 @@ def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam
                     eq_idx = i
 
         if colon_idx != -1:
-            annot_tokens = rest[:colon_idx]
+            rest_after_colon = rest[colon_idx + 1 :]
+            eq_idx2 = -1
+            depth2 = 0
+            for i, t in enumerate(rest_after_colon):
+                if t.type == TokenType.PARENTHESE_OPEN:
+                    depth2 += 1
+
+                elif t.type == TokenType.PARENTHESE_CLOSE:
+                    depth2 -= 1
+
+                elif depth2 == 0 and t.type == TokenType.OP and t.data == "=":
+                    eq_idx2 = i
+                    break
+
+            if eq_idx2 != -1:
+                annot_tokens = rest_after_colon[:eq_idx2]
+                default_tokens = rest_after_colon[eq_idx2 + 1 :]
+
+            else:
+                annot_tokens = rest_after_colon
+                default_tokens = []
+
             if annot_tokens:
                 annotation = parse_expr_all(annot_tokens)
 
-            rest = rest[colon_idx + 1 :]
+            if default_tokens:
+                default = parse_expr_all(default_tokens)
+
+        else:
             eq_idx = -1
             depth = 0
             for i, t in enumerate(rest):
@@ -222,10 +246,10 @@ def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam
                     eq_idx = i
                     break
 
-        if eq_idx != -1:
-            default_tokens = rest[eq_idx + 1 :]
-            if default_tokens:
-                default = parse_expr_all(default_tokens)
+            if eq_idx != -1:
+                default_tokens = rest[eq_idx + 1 :]
+                if default_tokens:
+                    default = parse_expr_all(default_tokens)
 
         params.append(
             IRParam(
