@@ -45,6 +45,42 @@ class ImportParser:
     ) -> None:
         i = 0
         while i < len(tokens):
+            if tokens[i].type == TokenType.PARENTHESE_OPEN and tokens[i].data == "(":
+                i += 1
+                while i < len(tokens) and tokens[i].type != TokenType.PARENTHESE_CLOSE:
+                    tok = tokens[i]
+                    if tok.type == TokenType.COMMA:
+                        i += 1
+                        continue
+
+                    if tok.type != TokenType.NAME:
+                        raise SyntaxError(
+                            f"Ожидалось имя в скобках импорта, получено {tok.data}"
+                        )
+
+                    name = tok.data
+                    i += 1
+                    if (
+                        i < len(tokens)
+                        and tokens[i].type == TokenType.KWORD
+                        and tokens[i].data == "as"
+                    ):
+                        i += 1
+                        if i >= len(tokens) or tokens[i].type != TokenType.NAME:
+                            raise SyntaxError("Ожидалось имя после 'as'")
+
+                        alias = tokens[i].data
+                        names.append((name, alias))
+                        i += 1
+
+                    else:
+                        names.append(name)
+
+                if i < len(tokens) and tokens[i].type == TokenType.PARENTHESE_CLOSE:
+                    i += 1
+
+                break
+
             if tokens[i].type != TokenType.NAME:
                 raise SyntaxError(f"Ожидалось имя модуля, получено {tokens[i].data}")
 
