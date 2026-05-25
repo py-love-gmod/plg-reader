@@ -9,9 +9,9 @@ from ..ir_builder_dt import (
     IRTuple,
 )
 from ._helpers import (
-    _split_balanced,
     extract_trailing_comment,
     parse_expr_all,
+    split_balanced,
     split_targets,
     tokens,
 )
@@ -88,9 +88,7 @@ class AssignmentParser:
 
         left_parts = split_targets(left_tokens, line.line_num)
         targets = [ExpressionParser(p).parse() for p in left_parts]
-        right_parts = _split_balanced(
-            right_significant, line.line_num, allow_star=False
-        )
+        right_parts = split_balanced(right_significant, line.line_num, allow_star=False)
         if len(right_parts) == 1:
             value = ExpressionParser(right_significant).parse()
 

@@ -38,12 +38,12 @@ from .statement_parsers import (
     WithParser,
 )
 from .statement_parsers._helpers import (
-    _ElifMarker,
-    _ElseMarker,
-    _ElseStub,
-    _ExceptMarker,
-    _FinallyMarker,
-    _FinallyStub,
+    ElifMarker,
+    ElseMarker,
+    ElseStub,
+    ExceptMarker,
+    FinallyMarker,
+    FinallyStub,
 )
 
 
@@ -174,7 +174,7 @@ class IRBuilder:
             return
 
         # elif / else
-        if isinstance(node, _ElifMarker):
+        if isinstance(node, ElifMarker):
             if not current_body or not isinstance(current_body[-1], IRIf):
                 raise SyntaxError("elif без предшествующего if")
 
@@ -183,17 +183,17 @@ class IRBuilder:
             current_body.append(elif_if)
             return
 
-        if isinstance(node, _ElseMarker):
+        if isinstance(node, ElseMarker):
             if not current_body or not isinstance(current_body[-1], IRIf):
                 raise SyntaxError("else без предшествующего if")
 
-            stub = _ElseStub(pos=node.pos)
+            stub = ElseStub(pos=node.pos)
             current_body[-1].orelse.append(stub)
             current_body.append(stub)
             return
 
         # except / finally
-        if isinstance(node, _ExceptMarker):
+        if isinstance(node, ExceptMarker):
             if not current_body or not isinstance(current_body[-1], IRTry):
                 raise SyntaxError("except без предшествующего try")
 
@@ -201,11 +201,11 @@ class IRBuilder:
             current_body.append(node.handler)
             return
 
-        if isinstance(node, _FinallyMarker):
+        if isinstance(node, FinallyMarker):
             if not current_body or not isinstance(current_body[-1], IRTry):
                 raise SyntaxError("finally без предшествующего try")
 
-            stub = _FinallyStub(pos=node.pos)
+            stub = FinallyStub(pos=node.pos)
             current_body[-1].finalbody = stub.body
             current_body.append(stub)
             return

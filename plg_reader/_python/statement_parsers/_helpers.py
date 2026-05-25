@@ -8,32 +8,32 @@ from .expressions_parser import ExpressionParser
 
 
 @dataclass
-class _ElifMarker(IRNode):
+class ElifMarker(IRNode):
     test: IRNode
 
 
 @dataclass
-class _ElseMarker(IRNode):
+class ElseMarker(IRNode):
     pass
 
 
 @dataclass
-class _ExceptMarker(IRNode):
+class ExceptMarker(IRNode):
     handler: IRExceptHandler
 
 
 @dataclass
-class _FinallyMarker(IRNode):
+class FinallyMarker(IRNode):
     pass
 
 
 @dataclass
-class _ElseStub(IRNode):
+class ElseStub(IRNode):
     body: list[IRNode] = field(default_factory=list)
 
 
 @dataclass
-class _FinallyStub(IRNode):
+class FinallyStub(IRNode):
     body: list[IRNode] = field(default_factory=list)
 
 
@@ -68,7 +68,7 @@ def parse_name(tokens: list[Token], pos: int, context: str) -> str:
     return tokens[pos].data
 
 
-def _split_balanced(
+def split_balanced(
     tokens: list[Token], line_num: int, *, allow_star: bool = False
 ) -> list[list[Token]]:
     """
@@ -115,7 +115,7 @@ def _split_balanced(
 
 
 def split_targets(tokens: list[Token], line_num: int) -> list[list[Token]]:
-    return _split_balanced(tokens, line_num, allow_star=False)
+    return split_balanced(tokens, line_num, allow_star=False)
 
 
 def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam]:
@@ -141,7 +141,7 @@ def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam
     if not inner:
         return []
 
-    raw_params = _split_balanced(inner, line_num, allow_star=True)
+    raw_params = split_balanced(inner, line_num, allow_star=True)
     params: list[IRParam] = []
 
     for rp in raw_params:
@@ -256,7 +256,7 @@ def parse_bases(tokens: list[Token], start: int, line_num: int) -> list[IRNode]:
     if not inner:
         return []
 
-    parts = _split_balanced(inner, line_num, allow_star=False)
+    parts = split_balanced(inner, line_num, allow_star=False)
     return [parse_expr_all(p) for p in parts]
 
 
