@@ -4,6 +4,7 @@ from ..file_parse_dt import Line, TokenType
 from ..ir_builder_dt import IRFunctionDef, IRNode
 from ._helpers import (
     extract_trailing_comment,
+    find_colon_skip_parens,
     is_kw,
     parse_expr_all,
     parse_name,
@@ -47,6 +48,10 @@ class DefParser:
             and significant[0].data == "->"
         ):
             return_tokens = significant[1:]
+            colon_idx = find_colon_skip_parens(return_tokens)
+            if colon_idx != -1:
+                return_tokens = return_tokens[:colon_idx]
+
             if return_tokens:
                 returns = parse_expr_all(return_tokens)
 
