@@ -114,8 +114,8 @@ def test_call_with_args(parse_code):
 @pytest.mark.parametrize(
     "expr, op",
     [
-        ("-a", "USub"),
-        ("not a", "Not"),
+        ("-a", "-"),
+        ("not a", "not"),
     ],
 )
 def test_unary_op(parse_code, expr, op):
