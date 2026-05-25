@@ -21,6 +21,11 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
         parser.advance()
         return IRConstant(pos=tok.pos, value=tok.data)
 
+    if tok.type == TokenType.KWORD and tok.data in ("True", "False", "None"):
+        parser.advance()
+        value = {"True": True, "False": False, "None": None}[tok.data]
+        return IRConstant(pos=tok.pos, value=value)
+
     if tok.type == TokenType.NAME:
         parser.advance()
         return IRName(pos=tok.pos, name=tok.data)
@@ -45,7 +50,7 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
             parser.advance()
             return parse_brace_collection(parser, tok.pos)
 
-    if tok.type == TokenType.OP and tok.data == '...':
+    if tok.type == TokenType.OP and tok.data == "...":
         parser.advance()
         return IRConstant(pos=tok.pos, value=Ellipsis)
 
