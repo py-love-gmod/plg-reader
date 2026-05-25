@@ -132,7 +132,17 @@ class FileParser:
         for text, segments in explicit:
             if result and FileParser._has_unclosed_brackets(result[-1][0]):
                 prev_text, prev_segments = result[-1]
-                result[-1] = (prev_text + text, prev_segments + segments)
+                offset_shift = len(prev_text)
+                shifted = [
+                    _LineSegment(
+                        seg.offset + offset_shift,
+                        seg.phys_line,
+                        seg.phys_col_start,
+                        seg.length,
+                    )
+                    for seg in segments
+                ]
+                result[-1] = (prev_text + text, prev_segments + shifted)
 
             else:
                 result.append((text, segments))
