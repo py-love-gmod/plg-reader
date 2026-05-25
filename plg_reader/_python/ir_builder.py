@@ -94,6 +94,30 @@ class IRBuilder:
             if nodes is None:
                 continue
 
+            if nodes and len(nodes) == 1:
+                block_node = nodes[0]
+                if hasattr(block_node, "body") and not getattr(block_node, "body"):
+                    colon_idx = next(
+                        (i for i, tok in enumerate(line.tokens) if tok.data == ":"), -1
+                    )
+
+                    if colon_idx != -1:
+                        body_tokens = [
+                            tok
+                            for tok in line.tokens[colon_idx + 1 :]
+                            if tok.type != TokenType.COMMENT
+                        ]
+
+                        if body_tokens:
+                            body_line = Line(
+                                indent=line.indent,
+                                line_num=line.line_num,
+                                tokens=body_tokens,
+                            )
+                            body_nodes = cls._parse_statement(body_line)
+                            if body_nodes:
+                                getattr(block_node, "body").extend(body_nodes)
+
             for node in nodes:
                 cls._place_node(
                     node, pending_decorators, file_node.imports, stack[-1][1]
