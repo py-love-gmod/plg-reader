@@ -133,17 +133,63 @@ class ExpressionParser:
         left = self.parse_prefix()
         while True:
             tok = self.current()
-            if tok is None or tok.type != TokenType.OP or tok.data not in BINARY_OPS:
+            if tok is None:
                 break
 
-            prec = BINARY_PREC[tok.data]
-            if prec < min_prec:
-                break
+            if tok.type == TokenType.KWORD and tok.data in ("not", "is"):
+                next_tok = (
+                    self.tokens[self.pos + 1]
+                    if self.pos + 1 < len(self.tokens)
+                    else None
+                )
+                if (
+                    next_tok
+                    and next_tok.type == TokenType.KWORD
+                    and next_tok.data in ("in", "not")
+                ):
+                    compound = tok.data + " " + next_tok.data
+                    if compound in BINARY_OPS:
+                        prec = BINARY_PREC[compound]
+                        if prec >= min_prec:
+                            self.advance()
+                            self.advance()
+                            right = self.parse_expression(prec + 1)
+                            left = IRBinOp(
+                                pos=left.pos,
+                                op=op_to_enum(compound),
+                                left=left,
+                                right=right,
+                            )
+                            continue
 
-            op = self.advance()
-            assert op is not None
-            right = self.parse_expression(prec + 1)
-            left = IRBinOp(pos=left.pos, op=op_to_enum(op.data), left=left, right=right)
+            if tok.type == TokenType.KWORD and tok.data in BINARY_OPS:
+                prec = BINARY_PREC[tok.data]
+                if prec < min_prec:
+                    break
+
+                op = self.advance()
+                assert op is not None
+                right = self.parse_expression(prec + 1)
+                left = IRBinOp(
+                    pos=left.pos, op=op_to_enum(op.data), left=left, right=right
+                )
+
+                continue
+
+            if tok.type == TokenType.OP and tok.data in BINARY_OPS:
+                prec = BINARY_PREC[tok.data]
+                if prec < min_prec:
+                    break
+
+                op = self.advance()
+                assert op is not None
+                right = self.parse_expression(prec + 1)
+                left = IRBinOp(
+                    pos=left.pos, op=op_to_enum(op.data), left=left, right=right
+                )
+                continue
+
+            break
 
         tok = self.current()
         if tok is not None and tok.type == TokenType.KWORD and tok.data == "if":
@@ -157,7 +203,12 @@ class ExpressionParser:
 
     def parse_prefix(self) -> IRNode:
         tok = require_not_none(self.current())
-        if tok.type == TokenType.OP and tok.data in ("+", "-", "not", "~"):
+        if tok.type == TokenType.KWORD and tok.data == "not":
+            self.advance()
+            operand = self.parse_expression(UNARY_PREC)
+            return IRUnaryOp(pos=tok.pos, op="not", operand=operand)
+
+        if tok.type == TokenType.OP and tok.data in ("+", "-", "~"):
             op = tok.data
             self.advance()
             operand = self.parse_expression(UNARY_PREC)
