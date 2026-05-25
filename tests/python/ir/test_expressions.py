@@ -1,3 +1,5 @@
+import pytest
+
 from plg_reader import (
     IRAttribute,
     IRBinOp,
@@ -11,33 +13,38 @@ from plg_reader import (
 )
 
 
-def test_constant_int(parse_code):
-    ir = parse_code("x = 42")
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        ("x = 42", 42),
+        ("x = 3.14", 3.14),
+        ("x = 'hello'", "'hello'"),
+    ],
+)
+def test_constant(parse_code, code, expected):
+    ir = parse_code(code)
     val = ir.body[0].value
     assert isinstance(val, IRConstant)
-    assert val.value == 42
+    if isinstance(expected, str):
+        assert val.value in (expected, expected.replace("'", '"'))
+
+    else:
+        assert val.value == expected
 
 
-def test_constant_float(parse_code):
-    ir = parse_code("x = 3.14")
-    val = ir.body[0].value
-    assert isinstance(val, IRConstant)
-    assert val.value == 3.14
-
-
-def test_constant_string(parse_code):
-    ir = parse_code("x = 'hello'")
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        ("x = True", True),
+        ("x = False", False),
+        ("x = None", None),
+    ],
+)
+def test_constant_bool_none(parse_code, code, expected):
+    ir = parse_code(code)
     c = ir.body[0].value
     assert isinstance(c, IRConstant)
-    assert c.value in ("'hello'", '"hello"')
-
-
-def test_constant_bool_none(parse_code):
-    for val, expected in [("True", True), ("False", False), ("None", None)]:
-        ir = parse_code(f"x = {val}")
-        c = ir.body[0].value
-        assert isinstance(c, IRConstant)
-        assert c.value == expected
+    assert c.value == expected
 
 
 def test_name(parse_code):
@@ -104,16 +111,23 @@ def test_call_with_args(parse_code):
     assert kw_b.value == 2
 
 
-def test_unary_op(parse_code):
-    for expr, op in [("-a", "USub"), ("not a", "Not")]:
-        ir = parse_code(f"x = {expr}")
-        un = ir.body[0].value
-        assert isinstance(un, IRUnaryOp)
-        assert un.op == op
+@pytest.mark.parametrize(
+    "expr, op",
+    [
+        ("-a", "USub"),
+        ("not a", "Not"),
+    ],
+)
+def test_unary_op(parse_code, expr, op):
+    ir = parse_code(f"x = {expr}")
+    un = ir.body[0].value
+    assert isinstance(un, IRUnaryOp)
+    assert un.op == op
 
 
-def test_binary_ops(parse_code):
-    tests = [
+@pytest.mark.parametrize(
+    "expr, op",
+    [
         ("a + b", IRBinOpType.ADD),
         ("a - b", IRBinOpType.SUB),
         ("a * b", IRBinOpType.MUL),
@@ -133,18 +147,19 @@ def test_binary_ops(parse_code):
         ("a not in b", IRBinOpType.NOT_IN),
         ("a is b", IRBinOpType.IS),
         ("a is not b", IRBinOpType.IS_NOT),
-    ]
-    for expr, op in tests:
-        ir = parse_code(f"x = {expr}")
-        binop = ir.body[0].value
-        assert isinstance(binop, IRBinOp)
-        assert binop.op == op
-        left = binop.left
-        assert isinstance(left, IRName)
-        assert left.name == "a"
-        right = binop.right
-        assert isinstance(right, IRName)
-        assert right.name == "b"
+    ],
+)
+def test_binary_ops(parse_code, expr, op):
+    ir = parse_code(f"x = {expr}")
+    binop = ir.body[0].value
+    assert isinstance(binop, IRBinOp)
+    assert binop.op == op
+    left = binop.left
+    assert isinstance(left, IRName)
+    assert left.name == "a"
+    right = binop.right
+    assert isinstance(right, IRName)
+    assert right.name == "b"
 
 
 def test_priority(parse_code):
