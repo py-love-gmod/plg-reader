@@ -209,29 +209,48 @@ class IRBuilder:
             return
 
         if isinstance(node, ElseMarker):
-            if not current_body or not isinstance(current_body[-1], IRIf):
-                raise SyntaxError("else без предшествующего if")
+            for parent in reversed(current_body):
+                if isinstance(parent, IRIf):
+                    stub = ElseStub(pos=node.pos)
+                    parent.orelse.append(stub)
+                    current_body.append(stub)
+                    return
 
-            stub = ElseStub(pos=node.pos)
-            current_body[-1].orelse.append(stub)
-            current_body.append(stub)
-            return
+                if isinstance(parent, IRTry):
+                    stub = ElseStub(pos=node.pos)
+                    parent.orelse.append(stub)
+                    current_body.append(stub)
+                    return
+
+            raise SyntaxError("else может следовать только за if или try")
 
         # except / finally
         if isinstance(node, ExceptMarker):
-            if not current_body or not isinstance(current_body[-1], IRTry):
+            parent_try = None
+            for p in reversed(current_body):
+                if isinstance(p, IRTry):
+                    parent_try = p
+                    break
+
+            if parent_try is None:
                 raise SyntaxError("except без предшествующего try")
 
-            current_body[-1].handlers.append(node.handler)
+            parent_try.handlers.append(node.handler)
             current_body.append(node.handler)
             return
 
         if isinstance(node, FinallyMarker):
-            if not current_body or not isinstance(current_body[-1], IRTry):
+            parent_try = None
+            for p in reversed(current_body):
+                if isinstance(p, IRTry):
+                    parent_try = p
+                    break
+
+            if parent_try is None:
                 raise SyntaxError("finally без предшествующего try")
 
             stub = FinallyStub(pos=node.pos)
-            current_body[-1].finalbody = stub.body
+            parent_try.finalbody = stub.body
             current_body.append(stub)
             return
 

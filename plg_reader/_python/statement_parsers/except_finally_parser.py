@@ -1,6 +1,7 @@
 from ..file_parse_dt import Line, TokenType
 from ..ir_builder_dt import IRExceptHandler, IRNode
 from ._helpers import (
+    ElseMarker,
     ExceptMarker,
     FinallyMarker,
     extract_trailing_comment,
@@ -73,6 +74,11 @@ class ExceptFinallyParser:
             return nodes
 
         elif is_kw(t, "else"):
-            return None
+            _, comment = extract_trailing_comment(t, 1)
+            nodes: list[IRNode] = [ElseMarker(pos=t[0].pos)]
+            if comment:
+                nodes.append(comment)
+
+            return nodes
 
         return None
