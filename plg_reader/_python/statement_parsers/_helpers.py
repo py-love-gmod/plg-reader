@@ -3,7 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..file_parse_dt import Line, Token, TokenType
-from ..ir_builder_dt import IRComment, IRExceptHandler, IRNode, IRParam, IRWithItem
+from ..ir_builder_dt import (
+    IRComment,
+    IRExceptHandler,
+    IRNode,
+    IRParam,
+    IRTuple,
+    IRWithItem,
+)
 from .expressions_parser import ExpressionParser
 
 
@@ -296,7 +303,30 @@ def parse_for_target(tokens: list[Token], start: int) -> tuple[IRNode, IRNode]:
     if in_idx == -1:
         raise SyntaxError("Ожидалось 'in' в заголовке for")
 
-    target = parse_expr_all(tokens[start:in_idx])
+    target_parts: list[list[Token]] = []
+    start_part = start
+    depth = 0
+    for i in range(start, in_idx):
+        t = tokens[i]
+        if t.type == TokenType.PARENTHESE_OPEN:
+            depth += 1
+
+        elif t.type == TokenType.PARENTHESE_CLOSE:
+            depth -= 1
+
+        elif depth == 0 and t.type == TokenType.COMMA:
+            target_parts.append(tokens[start_part:i])
+            start_part = i + 1
+
+    target_parts.append(tokens[start_part:in_idx])
+
+    if len(target_parts) == 1:
+        target = parse_expr_all(target_parts[0])
+
+    else:
+        elements = [parse_expr_all(p) for p in target_parts]
+        target = IRTuple(pos=elements[0].pos, elements=elements)
+
     iter_expr = parse_expr_all(tokens[in_idx + 1 :])
     return target, iter_expr
 
