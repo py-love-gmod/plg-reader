@@ -1,6 +1,12 @@
 from ..file_parse_dt import Line
 from ..ir_builder_dt import IRFor, IRNode
-from ._helpers import extract_trailing_comment, is_kw, parse_for_target, tokens
+from ._helpers import (
+    extract_trailing_comment,
+    find_colon_skip_parens,
+    is_kw,
+    parse_for_target,
+    tokens,
+)
 
 
 class ForParser:
@@ -22,7 +28,7 @@ class ForParser:
                 f"Ожидалось выражение после 'for' на строке {line.line_num}"
             )
 
-        colon_idx = next((i for i, tok in enumerate(clean) if tok.data == ":"), -1)
+        colon_idx = find_colon_skip_parens(clean)
         if colon_idx == -1:
             raise SyntaxError(f"Ожидалось ':' на строке {line.line_num}")
 

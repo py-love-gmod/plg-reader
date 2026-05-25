@@ -44,6 +44,7 @@ from .statement_parsers._helpers import (
     ExceptMarker,
     FinallyMarker,
     FinallyStub,
+    find_colon_skip_parens,
 )
 
 
@@ -97,9 +98,7 @@ class IRBuilder:
             if nodes and len(nodes) == 1:
                 block_node = nodes[0]
                 if hasattr(block_node, "body") and not getattr(block_node, "body"):
-                    colon_idx = next(
-                        (i for i, tok in enumerate(line.tokens) if tok.data == ":"), -1
-                    )
+                    colon_idx = find_colon_skip_parens(line.tokens)
 
                     if colon_idx != -1:
                         body_tokens = [

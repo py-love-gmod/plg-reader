@@ -404,3 +404,19 @@ def extract_trailing_comment(
         return significant, comment_node
 
     return tokens, None
+
+
+def find_colon_skip_parens(tokens: list[Token], start: int = 0) -> int:
+    depth = 0
+    for i in range(start, len(tokens)):
+        t = tokens[i]
+        if t.type == TokenType.PARENTHESE_OPEN:
+            depth += 1
+
+        elif t.type == TokenType.PARENTHESE_CLOSE:
+            depth -= 1
+
+        elif depth == 0 and t.type == TokenType.OP and t.data == ":":
+            return i
+
+    return -1
