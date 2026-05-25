@@ -261,7 +261,21 @@ def parse_bases(tokens: list[Token], start: int, line_num: int) -> list[IRNode]:
 
 
 def parse_condition(tokens: list[Token], start: int) -> IRNode:
-    return parse_expr_all(tokens[start:])
+    end = len(tokens)
+    depth = 0
+    for i in range(start, len(tokens)):
+        t = tokens[i]
+        if t.type == TokenType.PARENTHESE_OPEN:
+            depth += 1
+
+        elif t.type == TokenType.PARENTHESE_CLOSE:
+            depth -= 1
+
+        elif depth == 0 and t.type == TokenType.OP and t.data == ":":
+            end = i
+            break
+
+    return parse_expr_all(tokens[start:end])
 
 
 def parse_for_target(tokens: list[Token], start: int) -> tuple[IRNode, IRNode]:
