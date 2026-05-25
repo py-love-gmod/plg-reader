@@ -126,6 +126,7 @@ class IRBuilder:
         if pending_decorators:
             raise SyntaxError("Декораторы без цели в конце файла")
 
+        cls._flatten_stubs(file_node)
         return file_node
 
     @staticmethod
@@ -245,6 +246,29 @@ class IRBuilder:
                 )
 
         current_body.append(node)
+
+    @staticmethod
+    def _flatten_stubs(node: IRNode) -> None:
+        for fld in node.__dataclass_fields__:
+            if fld == "pos":
+                continue
+
+            value = getattr(node, fld)
+            if isinstance(value, list):
+                new_list: list[IRNode] = []
+                for item in value:
+                    if isinstance(item, (ElseStub, FinallyStub)):
+                        new_list.extend(item.body)
+
+                    else:
+                        new_list.append(item)
+                        if isinstance(item, IRNode):
+                            IRBuilder._flatten_stubs(item)
+
+                setattr(node, fld, new_list)
+
+            elif isinstance(value, IRNode):
+                IRBuilder._flatten_stubs(value)
 
     @staticmethod
     def _can_have_decorators(node: IRNode) -> bool:

@@ -47,9 +47,8 @@ def test_if_elif_else(parse_code):
     assert isinstance(elif_if.test, IRName)
     assert elif_if.test.name == "b"
     assert len(elif_if.orelse) == 1
-    else_block = elif_if.orelse[0]
-    assert len(else_block.body) == 1  # type: ignore
-    assert isinstance(else_block.body[0], IRPass)  # type: ignore
+    else_pass = elif_if.orelse[0]
+    assert isinstance(else_pass, IRPass)
 
 
 def test_while(parse_code):
