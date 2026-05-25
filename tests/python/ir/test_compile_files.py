@@ -17,5 +17,5 @@ def collect_test_files():
     ids=[name for _, name in collect_test_files()],
 )
 def test_compile_file(filepath):
-    ir = build_python_file(filepath, strip_comments=True)
+    ir = build_python_file(filepath)
     assert ir is not None
