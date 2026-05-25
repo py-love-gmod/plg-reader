@@ -6,6 +6,7 @@ from typing import Type
 from .file_parse_dt import Line, TokenType
 from .ir_builder_dt import (
     IRClassDef,
+    IRComment,
     IRDecorator,
     IRFile,
     IRFunctionDef,
@@ -189,6 +190,10 @@ class IRBuilder:
         imports: list[IRImport],
         current_body: list[IRNode],
     ) -> None:
+        if isinstance(node, IRComment):
+            current_body.append(node)
+            return
+
         if isinstance(node, IRImport):
             imports.append(node)
             return
