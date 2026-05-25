@@ -22,6 +22,12 @@ class ForParser:
                 f"Ожидалось выражение после 'for' на строке {line.line_num}"
             )
 
+        colon_idx = next((i for i, tok in enumerate(clean) if tok.data == ":"), -1)
+        if colon_idx == -1:
+            raise SyntaxError(f"Ожидалось ':' на строке {line.line_num}")
+
+        clean = clean[:colon_idx]
+
         target, iter_expr = parse_for_target(clean, 0)
         nodes: list[IRNode] = [IRFor(pos=t[0].pos, target=target, iter=iter_expr)]
         if comment:
