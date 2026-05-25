@@ -1,0 +1,176 @@
+from plg_reader import (
+    IRAttribute,
+    IRBinOp,
+    IRBinOpType,
+    IRCall,
+    IRConstant,
+    IRIfExpr,
+    IRName,
+    IRSubscript,
+    IRUnaryOp,
+)
+
+
+def test_constant_int(parse_code):
+    ir = parse_code("x = 42")
+    val = ir.body[0].value
+    assert isinstance(val, IRConstant)
+    assert val.value == 42
+
+
+def test_constant_float(parse_code):
+    ir = parse_code("x = 3.14")
+    val = ir.body[0].value
+    assert isinstance(val, IRConstant)
+    assert val.value == 3.14
+
+
+def test_constant_string(parse_code):
+    ir = parse_code("x = 'hello'")
+    c = ir.body[0].value
+    assert isinstance(c, IRConstant)
+    assert c.value in ("'hello'", '"hello"')
+
+
+def test_constant_bool_none(parse_code):
+    for val, expected in [("True", True), ("False", False), ("None", None)]:
+        ir = parse_code(f"x = {val}")
+        c = ir.body[0].value
+        assert isinstance(c, IRConstant)
+        assert c.value == expected
+
+
+def test_name(parse_code):
+    ir = parse_code("x = y")
+    name_node = ir.body[0].value
+    assert isinstance(name_node, IRName)
+    assert name_node.name == "y"
+
+
+def test_attribute_chain(parse_code):
+    ir = parse_code("x = a.b.c")
+    val = ir.body[0].value
+    assert isinstance(val, IRAttribute)
+    assert val.attr == "c"
+
+    mid = val.value
+    assert isinstance(mid, IRAttribute)
+    assert mid.attr == "b"
+
+    inner = mid.value
+    assert isinstance(inner, IRName)
+    assert inner.name == "a"
+
+
+def test_subscript(parse_code):
+    ir = parse_code("x = arr[0]")
+    sub = ir.body[0].value
+    assert isinstance(sub, IRSubscript)
+
+    sub_value = sub.value
+    assert isinstance(sub_value, IRName)
+    assert sub_value.name == "arr"
+
+    sub_index = sub.index
+    assert isinstance(sub_index, IRConstant)
+    assert sub_index.value == 0
+
+
+def test_call_simple(parse_code):
+    ir = parse_code("x = f()")
+    call = ir.body[0].value
+    assert isinstance(call, IRCall)
+
+    func = call.func
+    assert isinstance(func, IRName)
+    assert func.name == "f"
+    assert call.args == []
+    assert call.kwargs == {}
+
+
+def test_call_with_args(parse_code):
+    ir = parse_code("x = f(1, b=2)")
+    call = ir.body[0].value
+    assert isinstance(call, IRCall)
+    assert len(call.args) == 1
+
+    arg0 = call.args[0]
+    assert isinstance(arg0, IRConstant)
+    assert arg0.value == 1
+
+    assert "b" in call.kwargs
+    kw_b = call.kwargs["b"]
+    assert isinstance(kw_b, IRConstant)
+    assert kw_b.value == 2
+
+
+def test_unary_op(parse_code):
+    for expr, op in [("-a", "USub"), ("not a", "Not")]:
+        ir = parse_code(f"x = {expr}")
+        un = ir.body[0].value
+        assert isinstance(un, IRUnaryOp)
+        assert un.op == op
+
+
+def test_binary_ops(parse_code):
+    tests = [
+        ("a + b", IRBinOpType.ADD),
+        ("a - b", IRBinOpType.SUB),
+        ("a * b", IRBinOpType.MUL),
+        ("a / b", IRBinOpType.DIV),
+        ("a // b", IRBinOpType.FLOORDIV),
+        ("a % b", IRBinOpType.MOD),
+        ("a ** b", IRBinOpType.POW),
+        ("a == b", IRBinOpType.EQ),
+        ("a != b", IRBinOpType.NE),
+        ("a < b", IRBinOpType.LT),
+        ("a > b", IRBinOpType.GT),
+        ("a <= b", IRBinOpType.LE),
+        ("a >= b", IRBinOpType.GE),
+        ("a and b", IRBinOpType.AND),
+        ("a or b", IRBinOpType.OR),
+        ("a in b", IRBinOpType.IN),
+        ("a not in b", IRBinOpType.NOT_IN),
+        ("a is b", IRBinOpType.IS),
+        ("a is not b", IRBinOpType.IS_NOT),
+    ]
+    for expr, op in tests:
+        ir = parse_code(f"x = {expr}")
+        binop = ir.body[0].value
+        assert isinstance(binop, IRBinOp)
+        assert binop.op == op
+        left = binop.left
+        assert isinstance(left, IRName)
+        assert left.name == "a"
+        right = binop.right
+        assert isinstance(right, IRName)
+        assert right.name == "b"
+
+
+def test_priority(parse_code):
+    ir = parse_code("x = a + b * c")
+    top = ir.body[0].value
+    assert isinstance(top, IRBinOp)
+    assert top.op == IRBinOpType.ADD
+
+    right = top.right
+    assert isinstance(right, IRBinOp)
+    assert right.op == IRBinOpType.MUL
+
+
+def test_ternary(parse_code):
+    ir = parse_code("x = a if b else c")
+    val = ir.body[0].value
+    assert isinstance(val, IRIfExpr)
+
+    test = val.test
+    assert isinstance(test, IRName)
+    assert test.name == "b"
+
+    body = val.body
+    assert isinstance(body, IRName)
+    assert body.name == "a"
+
+    orelse = val.orelse
+    assert isinstance(orelse, IRName)
+    assert orelse.name == "c"
