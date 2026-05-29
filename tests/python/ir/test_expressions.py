@@ -9,6 +9,7 @@ from plg_reader import (
     IRIfExpr,
     IRName,
     IRSubscript,
+    IRTuple,
     IRUnaryOp,
 )
 
@@ -81,6 +82,43 @@ def test_subscript(parse_code):
     sub_index = sub.index
     assert isinstance(sub_index, IRConstant)
     assert sub_index.value == 0
+
+
+def test_subscript_multiple_indices(parse_code):
+    ir = parse_code("x = a[1, 2]")
+    sub = ir.body[0].value
+    assert isinstance(sub, IRSubscript)
+    assert isinstance(sub.index, IRTuple)
+    assert len(sub.index.elements) == 2
+    assert isinstance(sub.index.elements[0], IRConstant)
+    assert sub.index.elements[0].value == 1
+    assert isinstance(sub.index.elements[1], IRConstant)
+    assert sub.index.elements[1].value == 2
+
+
+def test_subscript_single_with_trailing_comma(parse_code):
+    ir = parse_code("x = a[0,]")
+    sub = ir.body[0].value
+    assert isinstance(sub, IRSubscript)
+    assert isinstance(sub.index, IRConstant)
+    assert sub.index.value == 0
+
+
+def test_subscript_three_indices(parse_code):
+    ir = parse_code("x = a[1, 2, 3]")
+    sub = ir.body[0].value
+    assert isinstance(sub.index, IRTuple)
+    assert len(sub.index.elements) == 3
+
+
+def test_subscript_with_names(parse_code):
+    ir = parse_code("x = dct[str, int]")
+    sub = ir.body[0].value
+    assert isinstance(sub.index, IRTuple)
+    assert isinstance(sub.index.elements[0], IRName)
+    assert sub.index.elements[0].name == "str"
+    assert isinstance(sub.index.elements[1], IRName)
+    assert sub.index.elements[1].name == "int"
 
 
 def test_call_simple(parse_code):

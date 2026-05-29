@@ -4,6 +4,7 @@ from plg_reader import (
     IRAttribute,
     IRBinOpType,
     IRConstant,
+    IRDict,
     IRName,
     IRSubscript,
     IRTuple,
@@ -88,6 +89,23 @@ def test_subscript_assign(parse_code):
     assert target.value.name == "x"
     assert isinstance(target.index, IRConstant)
     assert target.index.value == 0
+
+
+def test_annotated_assign_dict_subscript(parse_code):
+    ir = parse_code("x: dict[str, int] = {}")
+    node = ir.body[0]
+    assert isinstance(node, IRAnnotatedAssign)
+    ann = node.annotation
+    assert isinstance(ann, IRSubscript)
+    assert isinstance(ann.value, IRName)
+    assert ann.value.name == "dict"
+    assert isinstance(ann.index, IRTuple)
+    assert len(ann.index.elements) == 2
+    assert isinstance(ann.index.elements[0], IRName)
+    assert ann.index.elements[0].name == "str"
+    assert isinstance(ann.index.elements[1], IRName)
+    assert ann.index.elements[1].name == "int"
+    assert isinstance(node.value, IRDict)
 
 
 def test_attr_assign(parse_code):
