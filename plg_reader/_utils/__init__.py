@@ -1,10 +1,12 @@
 import os
 import sysconfig
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from functools import cache
 
 from .bynary_rw import BinaryRW
 
 
+@cache
 def get_cpus_and_executor() -> tuple[
     int,
     type[ThreadPoolExecutor] | type[ProcessPoolExecutor],
