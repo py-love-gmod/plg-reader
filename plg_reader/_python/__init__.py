@@ -1,8 +1,7 @@
 from concurrent.futures import as_completed
 from pathlib import Path
 
-from _utils import get_cpus_and_executor
-
+from .._utils import get_cpus_and_executor
 from .file_parser import FileParser
 from .ir_builder import IRBuilder
 from .ir_builder_dt import IRFile
