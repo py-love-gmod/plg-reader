@@ -1,7 +1,7 @@
-import os
-import sysconfig
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
+
+from _utils import get_cpus_and_executor
 
 from .file_parser import FileParser
 from .ir_builder import IRBuilder
@@ -37,7 +37,7 @@ def build_python_files_dir(
     if not files:
         raise ValueError(f"Нет .py/.pyi файлов в {path}")
 
-    cpus = os.cpu_count() or 1
+    cpus, Executor = get_cpus_and_executor()
     workers = min(cpus, len(files))
 
     if workers <= 1:
@@ -45,12 +45,6 @@ def build_python_files_dir(
             f.relative_to(path).as_posix(): build_python_file(f, strip_comments)
             for f in files
         }
-
-    if bool(sysconfig.get_config_var("Py_GIL_DISABLED")):
-        Executor = ThreadPoolExecutor
-
-    else:
-        Executor = ProcessPoolExecutor
 
     with Executor(max_workers=workers) as executor:
         future_to_file = {
