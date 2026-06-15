@@ -3,8 +3,6 @@ import sysconfig
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from functools import cache
 
-import clii
-
 from .bynary_rw import BinaryRW
 
 
@@ -22,7 +20,6 @@ def get_cpus_and_executor() -> tuple[
 
 
 __all__ = [
-    "clii",
     "BinaryRW",
     "get_cpus_and_executor",
 ]
