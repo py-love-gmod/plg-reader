@@ -41,6 +41,7 @@ from ._python.ir_builder_dt import (
     IRWith,
     IRWithItem,
 )
+from ._python.ir_transformer import IRTransformer
 from ._utils import BinaryRW, get_cpus_and_executor
 
 __all__ = [
@@ -86,6 +87,7 @@ __all__ = [
     "IRWhile",
     "IRWith",
     "IRWithItem",
+    "IRTransformer",
     "BinaryRW",
     "get_cpus_and_executor",
 ]
