@@ -42,7 +42,7 @@ from ._python.ir_builder_dt import (
     IRWithItem,
 )
 from ._python.ir_transformer import IRTransformer
-from ._utils import BinaryRW, get_cpus_and_executor
+from ._utils import BinaryRW, clii, get_cpus_and_executor
 
 __all__ = [
     "build_python_file",
@@ -89,5 +89,6 @@ __all__ = [
     "IRWithItem",
     "IRTransformer",
     "BinaryRW",
+    "clii",
     "get_cpus_and_executor",
 ]
