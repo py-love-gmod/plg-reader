@@ -4,7 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from plg_reader._utils import BinaryRW
+from plg_reader._utils.bynary_rw import (
+    BinaryRW,
+    _read_bytes,
+    _read_obj,
+    _read_str,
+    _read_varint,
+    _write_bytes,
+    _write_str,
+    _write_varint,
+)
 
 
 class TestBinaryRW:
@@ -22,7 +31,53 @@ class TestBinaryRW:
             file.seek(0)
             return BinaryRW.load(file)
 
-    # простые типы
+    # Прямые тесты вспомогательных функци
+    def test_write_read_str(self):
+        f = BytesIO()
+        for s in (
+            "",
+            "a",
+            "hello",
+            "привет 🐍",
+            "x" * 1000,
+            "\u0000\u007f\u0800\U0010ffff",
+        ):
+            _write_str(f, s)
+            f.write(b"SEP")  # маркер для разделения
+
+        f.seek(0)
+        for expected in (
+            "",
+            "a",
+            "hello",
+            "привет 🐍",
+            "x" * 1000,
+            "\u0000\u007f\u0800\U0010ffff",
+        ):
+            assert _read_str(f) == expected
+            assert f.read(3) == b"SEP"
+
+    def test_write_read_bytes(self):
+        f = BytesIO()
+        for b in (b"", b"\x00", b"hello", bytes(range(256)), b"x" * 2000):
+            _write_bytes(f, b)
+            f.write(b"SEP")
+
+        f.seek(0)
+        for expected in (b"", b"\x00", b"hello", bytes(range(256)), b"x" * 2000):
+            assert _read_bytes(f) == expected
+            assert f.read(3) == b"SEP"
+
+    def test_write_read_varint(self):
+        f = BytesIO()
+        values = [0, 1, 127, 128, 16383, 16384, 2**20, 2**64 - 1, 10**100]
+        for v in values:
+            _write_varint(f, v)
+
+        f.seek(0)
+        for expected in values:
+            assert _read_varint(f) == expected
+
     def test_none(self):
         _, p = self.roundtrip(None)
         assert p is None
@@ -53,8 +108,9 @@ class TestBinaryRW:
             float("nan"),
         ):
             _, p = self.roundtrip(value)
-            if math.isnan(value):
+            if math.isnan(value) and isinstance(p, float):
                 assert math.isnan(p)
+
             else:
                 assert p == value
 
@@ -68,7 +124,6 @@ class TestBinaryRW:
             _, p = self.roundtrip(value)
             assert p == value
 
-    # контейнеры
     def test_list(self):
         obj = [1, 2.5, "three", None, [4, 5]]
         _, p = self.roundtrip(obj)
@@ -87,7 +142,6 @@ class TestBinaryRW:
         _, p = self.roundtrip(())
         assert p == ()
 
-    # dict с разнородными ключами
     def test_dict(self):
         obj = {"a": 1, "b": 2.5, "c": None, "d": [1, 2]}
         _, p = self.roundtrip(obj)
@@ -104,24 +158,20 @@ class TestBinaryRW:
             None: "none key",
             False: "bool key",
             "str": "string key",
-            # float ключ – ок, но сравнение может быть неточным, используем 1.0
-            1.0: "float key",  # noqa: F601
+            2.0: "float key",
         }
         _, p = self.roundtrip(obj)
-        # float 1.0 и int 1 считаются одинаковыми ключами в Python, но после roundtrip
-        # должно остаться так же. Проверяем, что ключи совпадают.
+        assert isinstance(p, dict)
         assert len(p) == len(obj)
         for k, v in obj.items():
             assert k in p
             assert p[k] == v
 
     def test_dict_bytes_key(self):
-        """Bytes ключи допустимы, хотя и необычны."""
         obj = {b"binary": 42}
         _, p = self.roundtrip(obj)
         assert p == obj
 
-    # set
     def test_set(self):
         obj = {1, 2.5, "three", None}
         _, p = self.roundtrip(obj)
@@ -132,11 +182,9 @@ class TestBinaryRW:
         assert p == set()
 
     def test_set_nested(self):
-        # frozenset не сериализуется, поэтому проверим, что внутри set можно хранить только поддерживаемые типы
         with pytest.raises(TypeError):
             self.roundtrip({frozenset([1])})
 
-    # вложенные структуры
     def test_complex_structure(self):
         obj = [
             {"id": 42, "values": (1, 2, 3), "flag": True, "tags": {1, 2, 3}},
@@ -151,7 +199,7 @@ class TestBinaryRW:
         _, p = self.roundtrip(obj)
         assert p == obj
 
-    # заголовок
+    # Заголовок
     def test_header_preserved(self):
         header = "my header"
         obj = {"key": [1, 2, 3]}
@@ -171,22 +219,29 @@ class TestBinaryRW:
         assert h == header
         assert p == obj
 
-    # ошибки
+    def test_long_header(self):
+        header = "x" * 20000
+        obj = 123
+        h, p = self.roundtrip(obj, header)
+        assert h == header
+        assert p == obj
+
+    # Ошибки
     def test_unsupported_type(self):
         with pytest.raises(TypeError, match="Unsupported type"):
-            BinaryRW.dump(BytesIO(), "", object())
+            BinaryRW.dump(BytesIO(), "", object())  # type: ignore
 
     def test_unknown_tag(self):
         f = BytesIO(b"\xff")
         with pytest.raises(ValueError, match="Unknown tag"):
-            BinaryRW._read_obj(f)
+            _read_obj(f)
 
     def test_invalid_magic(self):
         f = BytesIO(b"BADD")
         with pytest.raises(ValueError, match="Invalid magic"):
             BinaryRW.load(f)
 
-    # запись в реальный файл
+    # Реальный файл
     def test_real_file(self, tmp_path: Path):
         file_path = tmp_path / "test.plg"
         obj = {"real": [1, 2.5, "file"]}

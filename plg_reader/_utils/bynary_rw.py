@@ -26,7 +26,7 @@ _BT_SET = b"\x0b"
 # endregion
 
 
-# region Var int
+# region Utils
 def _write_varint(f: BinaryIO, value: int) -> None:
     while value >= 0x80:
         f.write(struct.pack("<B", (value & 0x7F) | 0x80))
@@ -48,75 +48,93 @@ def _read_varint(f: BinaryIO) -> int:
     return value
 
 
+def _write_str(file: BinaryIO, string: str) -> None:
+    data = string.encode("utf-8")
+    _write_varint(file, len(data))
+    file.write(data)
+
+
+def _read_str(file: BinaryIO) -> str:
+    size = _read_varint(file)
+    return file.read(size).decode("utf-8")
+
+
+def _write_bytes(f: BinaryIO, b: bytes) -> None:
+    _write_varint(f, len(b))
+    f.write(b)
+
+
+def _read_bytes(f: BinaryIO) -> bytes:
+    size = _read_varint(f)
+    return f.read(size)
+
+
 # endregion
 
 
 # region Read Write obj
 # Запись произвольного объекта
-def _write_obj(f: BinaryIO, obj: Any) -> None:
+def _write_obj(file: BinaryIO, obj: Any) -> None:
     match obj:
         case None:
-            f.write(_BT_NONE)
+            file.write(_BT_NONE)
 
         case bool():
-            f.write(_BT_BOOL_T if obj else _BT_BOOL_F)
+            file.write(_BT_BOOL_T if obj else _BT_BOOL_F)
 
         case int():
             if obj >= 0:
-                f.write(_BT_INT_P)
-                _write_varint(f, obj)
+                file.write(_BT_INT_P)
+                _write_varint(file, obj)
 
             else:
-                f.write(_BT_INT_N)
-                _write_varint(f, -obj)
+                file.write(_BT_INT_N)
+                _write_varint(file, -obj)
 
         case float():
-            f.write(_BT_FLOAT)
-            f.write(struct.pack("<d", obj))
+            file.write(_BT_FLOAT)
+            file.write(struct.pack("<d", obj))
 
         case str():
-            f.write(_BT_STRING)
-            data = obj.encode("utf-8")
-            _write_varint(f, len(data))
-            f.write(data)
+            file.write(_BT_STRING)
+            _write_str(file, obj)
 
         case bytes():
-            f.write(_BT_BYTES)
-            _write_varint(f, len(obj))
-            f.write(obj)
+            file.write(_BT_BYTES)
+            _write_bytes(file, obj)
 
         case list():
-            f.write(_BT_LIST)
-            _write_varint(f, len(obj))
+            file.write(_BT_LIST)
+            _write_varint(file, len(obj))
             for item in obj:
-                _write_obj(f, item)
+                _write_obj(file, item)
 
         case tuple():
-            f.write(_BT_TUPLE)
-            _write_varint(f, len(obj))
+            file.write(_BT_TUPLE)
+            _write_varint(file, len(obj))
             for item in obj:
-                _write_obj(f, item)
+                _write_obj(file, item)
 
         case dict():
-            f.write(_BT_DICT)
-            _write_varint(f, len(obj))
+            file.write(_BT_DICT)
+            _write_varint(file, len(obj))
             for k, v in obj.items():
-                _write_obj(f, k)
-                _write_obj(f, v)
+                _write_obj(file, k)
+                _write_obj(file, v)
 
         case set():
-            f.write(_BT_SET)
-            _write_varint(f, len(obj))
+            file.write(_BT_SET)
+            _write_varint(file, len(obj))
             for item in obj:
-                _write_obj(f, item)
+                _write_obj(file, item)
 
         case _:
             raise TypeError(f"Unsupported type: {type(obj)}")
 
 
 # Чтение произвольного объекта
-def _read_obj(f: BinaryIO) -> Any:
-    tag = f.read(1)
+def _read_obj(file: BinaryIO) -> Any:
+    tag = file.read(1)
 
     # Спасибо питон за match. А можно его было сделать просто как в C?
     # При этом сверху юзал его по питонячи. МДААААААААААААА
@@ -130,43 +148,41 @@ def _read_obj(f: BinaryIO) -> Any:
         return False
 
     elif tag == _BT_INT_P:
-        return _read_varint(f)
+        return _read_varint(file)
 
     elif tag == _BT_INT_N:
-        return -_read_varint(f)
+        return -_read_varint(file)
 
     elif tag == _BT_FLOAT:
-        return struct.unpack("<d", f.read(8))[0]
+        return struct.unpack("<d", file.read(8))[0]
 
     elif tag == _BT_STRING:
-        size = _read_varint(f)
-        return f.read(size).decode("utf-8")
+        return _read_str(file)
 
     elif tag == _BT_BYTES:
-        size = _read_varint(f)
-        return f.read(size)
+        return _read_bytes(file)
 
     elif tag == _BT_LIST:
-        size = _read_varint(f)
-        return [_read_obj(f) for _ in range(size)]
+        size = _read_varint(file)
+        return [_read_obj(file) for _ in range(size)]
 
     elif tag == _BT_TUPLE:
-        size = _read_varint(f)
-        return tuple(_read_obj(f) for _ in range(size))
+        size = _read_varint(file)
+        return tuple(_read_obj(file) for _ in range(size))
 
     elif tag == _BT_DICT:
-        size = _read_varint(f)
+        size = _read_varint(file)
         d = {}
         for _ in range(size):
-            k = _read_obj(f)
-            v = _read_obj(f)
+            k = _read_obj(file)
+            v = _read_obj(file)
             d[k] = v
 
         return d
 
     elif tag == _BT_SET:
-        size = _read_varint(f)
-        return {_read_obj(f) for _ in range(size)}
+        size = _read_varint(file)
+        return {_read_obj(file) for _ in range(size)}
 
     # TODO: Добавить произвольное чтение классов
 
@@ -188,9 +204,7 @@ class BinaryRW:
         Сериализовать объект и записать в файл.
         """
         file.write(b"PLGB")
-        header_bytes = header.encode("utf-8")
-        _write_varint(file, len(header_bytes))
-        file.write(header_bytes)
+        _write_str(file, header)
         _write_obj(file, obj)
 
     @staticmethod
@@ -207,7 +221,4 @@ class BinaryRW:
         if magic != b"PLGB":
             raise ValueError("Invalid magic signature: expected b'PLGB'")
 
-        header_len = _read_varint(file)
-        header = file.read(header_len).decode("utf-8")
-        payload = _read_obj(file)
-        return header, payload
+        return _read_str(file), _read_obj(file)
