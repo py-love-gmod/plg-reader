@@ -116,10 +116,6 @@ def parse_brace_collection(
 def _parse_items(
     parser: ExpressionParser, end_type: TokenType, end_val: str
 ) -> list[IRNode]:
-    """
-    Общий сбор элементов через запятую до закрывающей скобки.
-    Используется для списков, множеств и кортежей (без первого элемента).
-    """
     items: list[IRNode] = []
     tok = parser.current()
     if tok is not None and tok.type == end_type and tok.data == end_val:
@@ -137,7 +133,7 @@ def _parse_items(
             tok = parser.current()
             if tok is not None and tok.type == end_type and tok.data == end_val:
                 parser.advance()
-                break
+                return items
 
         else:
             break

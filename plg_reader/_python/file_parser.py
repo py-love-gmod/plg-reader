@@ -130,8 +130,14 @@ class FileParser:
     ) -> list[tuple[str, list[_LineSegment]]]:
         result: list[tuple[str, list[_LineSegment]]] = []
         for text, segments in explicit:
-            if result and FileParser._has_unclosed_brackets(result[-1][0]):
-                prev_text, prev_segments = result[-1]
+            last_open_idx = -1
+            for i in range(len(result) - 1, -1, -1):
+                if FileParser._has_unclosed_brackets(result[i][0]):
+                    last_open_idx = i
+                    break
+
+            if last_open_idx != -1:
+                prev_text, prev_segments = result[last_open_idx]
                 offset_shift = len(prev_text)
                 shifted = [
                     _LineSegment(
@@ -142,7 +148,7 @@ class FileParser:
                     )
                     for seg in segments
                 ]
-                result[-1] = (prev_text + text, prev_segments + shifted)
+                result[last_open_idx] = (prev_text + text, prev_segments + shifted)
 
             else:
                 result.append((text, segments))
