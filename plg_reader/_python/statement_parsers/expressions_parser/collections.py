@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ...file_parse_dt import TokenType
 from ...ir_builder_dt import (
     IRDict,
@@ -9,8 +11,10 @@ from ...ir_builder_dt import (
     IRSet,
     IRTuple,
 )
-from .base import ExpressionParser
 from .utils import forbid_star, require_not_none
+
+if TYPE_CHECKING:
+    from .base import ExpressionParser
 
 
 def parse_list(parser: ExpressionParser, open_pos: tuple[int, int]) -> IRList:
@@ -97,7 +101,7 @@ def parse_brace_collection(
     parser: ExpressionParser, open_pos: tuple[int, int]
 ) -> IRNode:
     """
-    Пытается разобрать как словарь, при неудаче — как множество.
+    Пытается разобрать как словарь, при неудаче - как множество.
     Открывающая скобка уже съедена.
     """
     start = parser.pos

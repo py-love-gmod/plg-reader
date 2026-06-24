@@ -7,6 +7,7 @@ from plg_reader import (
     IRCall,
     IRConstant,
     IRIfExpr,
+    IRList,
     IRName,
     IRSubscript,
     IRTuple,
@@ -227,3 +228,48 @@ def test_ternary(parse_code):
     orelse = val.orelse
     assert isinstance(orelse, IRName)
     assert orelse.name == "c"
+
+
+def test_subscript_vs_list(parse_code):
+    ir = parse_code("x = list[int]")
+    sub = ir.body[0].value
+    assert isinstance(sub, IRSubscript)
+    assert isinstance(sub.value, IRName)
+    assert sub.value.name == "list"
+    assert isinstance(sub.index, IRName)
+    assert sub.index.name == "int"
+
+    ir2 = parse_code("x = [1, 2]")
+    lst = ir2.body[0].value
+    assert isinstance(lst, IRList)
+
+
+def test_nested_generic_expr(parse_code):
+    ir = parse_code("x = dict[str, list[int]]")
+    outer = ir.body[0].value
+    assert isinstance(outer, IRSubscript)
+    assert isinstance(outer.value, IRName)
+    assert outer.value.name == "dict"
+    assert isinstance(outer.index, IRTuple)
+
+    inner = outer.index.elements[1]
+    assert isinstance(inner, IRSubscript)
+    assert isinstance(inner.value, IRName)
+    assert inner.value.name == "list"
+    assert isinstance(inner.index, IRName)
+    assert inner.index.name == "int"
+
+
+def test_unary_before_list(parse_code):
+    ir = parse_code("x = -[1, 2]")
+    un = ir.body[0].value
+    assert isinstance(un, IRUnaryOp)
+    assert un.op == "-"
+    assert isinstance(un.operand, IRList)
+
+
+def test_empty_list_literal(parse_code):
+    ir = parse_code("x = []")
+    lst = ir.body[0].value
+    assert isinstance(lst, IRList)
+    assert lst.elements == []

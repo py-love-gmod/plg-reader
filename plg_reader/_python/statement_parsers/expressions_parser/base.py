@@ -9,6 +9,7 @@ from ...ir_builder_dt import (
     IRNode,
     IRUnaryOp,
 )
+from .collections import parse_list
 from .utils import require_not_none
 
 BINARY_PREC = {
@@ -204,6 +205,13 @@ class ExpressionParser:
 
     def parse_prefix(self) -> IRNode:
         tok = require_not_none(self.current())
+
+        if tok.type == TokenType.PARENTHESE_OPEN and tok.data == "[":
+            start_pos = tok.pos
+            self.advance()
+            node = parse_list(self, start_pos)
+            return self.parse_postfix_chain(node)
+
         if tok.type == TokenType.KWORD and tok.data == "not":
             self.advance()
             operand = self.parse_expression(UNARY_PREC)

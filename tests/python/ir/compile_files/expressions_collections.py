@@ -6,7 +6,7 @@ b2 = False
 n = None
 
 # имена и атрибуты
-a = x.y.z # type: ignore
+a = x.y.z  # type: ignore
 b = arr[0]  # type: ignore # noqa: F821
 
 # вызовы
@@ -38,3 +38,10 @@ tup = (1, 2, 3)
 st = {1, 2, 3}
 dct = {"a": 1, "b": 2}
 nest = [[1, 2], (3, 4), {5, 6}]
+
+# Подписка, которая не должна путаться со списком
+sub = list[int]()
+sub2 = dict[str, int]()
+
+# Вложенные подписки в выражении
+deep = dict[str, list[int]]()

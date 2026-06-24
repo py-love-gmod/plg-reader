@@ -10,7 +10,7 @@ from ...ir_builder_dt import (
     IRTuple,
 )
 from .base import ExpressionParser
-from .collections import parse_brace_collection, parse_list, parse_tuple
+from .collections import parse_brace_collection, parse_tuple
 from .utils import require_not_none
 
 
@@ -42,10 +42,6 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
         if tok.data == "(":
             return parse_paren(parser)
 
-        elif tok.data == "[":
-            parser.advance()
-            return parse_list(parser, tok.pos)
-
         elif tok.data == "{":
             parser.advance()
             return parse_brace_collection(parser, tok.pos)
@@ -65,7 +61,7 @@ def parse_atom(parser: ExpressionParser) -> IRNode:
 
 
 def parse_paren(parser: ExpressionParser) -> IRNode:
-    """Обрабатывает '(' ... ')' — группировка или кортеж."""
+    """Обрабатывает '(' ... ')' - группировка или кортеж."""
     open_tok = parser.expect(TokenType.PARENTHESE_OPEN, "(")
     tok = require_not_none(parser.current(), "кортежа")
     if tok.type == TokenType.PARENTHESE_CLOSE:
