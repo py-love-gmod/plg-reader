@@ -125,6 +125,46 @@ def split_targets(tokens: list[Token], line_num: int) -> list[list[Token]]:
     return split_balanced(tokens, line_num, allow_star=False)
 
 
+def _parse_param_annotation_default(
+    tokens: list[Token], start: int
+) -> tuple[IRNode | None, IRNode | None]:
+    annotation = None
+    default = None
+    rest = tokens[start:]
+    if not rest:
+        return None, None
+
+    colon_idx = -1
+    eq_idx = -1
+    depth = 0
+    for i, t in enumerate(rest):
+        if t.type == TokenType.PARENTHESE_OPEN:
+            depth += 1
+
+        elif t.type == TokenType.PARENTHESE_CLOSE:
+            depth -= 1
+
+        elif depth == 0:
+            if t.type == TokenType.OP and t.data == ":" and colon_idx == -1:
+                colon_idx = i
+
+            elif t.type == TokenType.OP and t.data == "=" and eq_idx == -1:
+                eq_idx = i
+
+    if colon_idx != -1:
+        annot_end = eq_idx if eq_idx != -1 else len(rest)
+        annot_tokens = rest[colon_idx + 1 : annot_end]
+        if annot_tokens:
+            annotation = parse_expr_all(annot_tokens)
+
+    if eq_idx != -1:
+        default_tokens = rest[eq_idx + 1 :]
+        if default_tokens:
+            default = parse_expr_all(default_tokens)
+
+    return annotation, default
+
+
 def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam]:
     if start >= len(tokens) or tokens[start].data != "(":
         raise SyntaxError(f"Ожидалась '(' на строке {line_num}")
@@ -158,18 +198,37 @@ def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam
         if rp[0].type == TokenType.OP and rp[0].data == "*":
             if len(rp) == 1:
                 params.append(IRParam(pos=rp[0].pos, name="*", kind="star"))
-
                 continue
 
-            if len(rp) == 2 and rp[1].type == TokenType.NAME:
-                params.append(IRParam(pos=rp[0].pos, name=rp[1].data, kind="star_arg"))
+            if rp[1].type == TokenType.NAME:
+                name = rp[1].data
+                annot, default = _parse_param_annotation_default(rp, 2)
+                params.append(
+                    IRParam(
+                        pos=rp[0].pos,
+                        name=name,
+                        kind="star_arg",
+                        annotation=annot,
+                        default=default,
+                    )
+                )
                 continue
 
             raise SyntaxError(f"Некорректный * параметр на строке {line_num}")
 
         if rp[0].type == TokenType.OP and rp[0].data == "**":
-            if len(rp) == 2 and rp[1].type == TokenType.NAME:
-                params.append(IRParam(pos=rp[0].pos, name=rp[1].data, kind="kw_arg"))
+            if len(rp) >= 2 and rp[1].type == TokenType.NAME:
+                name = rp[1].data
+                annot, default = _parse_param_annotation_default(rp, 2)
+                params.append(
+                    IRParam(
+                        pos=rp[0].pos,
+                        name=name,
+                        kind="kw_arg",
+                        annotation=annot,
+                        default=default,
+                    )
+                )
                 continue
 
             raise SyntaxError(f"Некорректный ** параметр на строке {line_num}")
@@ -182,81 +241,13 @@ def parse_params(tokens: list[Token], start: int, line_num: int) -> list[IRParam
             raise SyntaxError(f"Ожидалось имя параметра на строке {line_num}")
 
         name = rp[0].data
-        rest = rp[1:]
-        annotation: IRNode | None = None
-        default: IRNode | None = None
-
-        colon_idx = -1
-        eq_idx = -1
-        depth = 0
-        for i, t in enumerate(rest):
-            if t.type == TokenType.PARENTHESE_OPEN:
-                depth += 1
-
-            elif t.type == TokenType.PARENTHESE_CLOSE:
-                depth -= 1
-
-            elif depth == 0:
-                if t.type == TokenType.OP and t.data == ":" and colon_idx == -1:
-                    colon_idx = i
-
-                elif t.type == TokenType.OP and t.data == "=" and eq_idx == -1:
-                    eq_idx = i
-
-        if colon_idx != -1:
-            rest_after_colon = rest[colon_idx + 1 :]
-            eq_idx2 = -1
-            depth2 = 0
-            for i, t in enumerate(rest_after_colon):
-                if t.type == TokenType.PARENTHESE_OPEN:
-                    depth2 += 1
-
-                elif t.type == TokenType.PARENTHESE_CLOSE:
-                    depth2 -= 1
-
-                elif depth2 == 0 and t.type == TokenType.OP and t.data == "=":
-                    eq_idx2 = i
-                    break
-
-            if eq_idx2 != -1:
-                annot_tokens = rest_after_colon[:eq_idx2]
-                default_tokens = rest_after_colon[eq_idx2 + 1 :]
-
-            else:
-                annot_tokens = rest_after_colon
-                default_tokens = []
-
-            if annot_tokens:
-                annotation = parse_expr_all(annot_tokens)
-
-            if default_tokens:
-                default = parse_expr_all(default_tokens)
-
-        else:
-            eq_idx = -1
-            depth = 0
-            for i, t in enumerate(rest):
-                if t.type == TokenType.PARENTHESE_OPEN:
-                    depth += 1
-
-                elif t.type == TokenType.PARENTHESE_CLOSE:
-                    depth -= 1
-
-                elif depth == 0 and t.type == TokenType.OP and t.data == "=":
-                    eq_idx = i
-                    break
-
-            if eq_idx != -1:
-                default_tokens = rest[eq_idx + 1 :]
-                if default_tokens:
-                    default = parse_expr_all(default_tokens)
-
+        annot, default = _parse_param_annotation_default(rp, 1)
         params.append(
             IRParam(
                 pos=rp[0].pos,
                 name=name,
                 kind="positional",
-                annotation=annotation,
+                annotation=annot,
                 default=default,
             )
         )
